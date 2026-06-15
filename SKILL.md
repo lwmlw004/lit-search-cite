@@ -10,6 +10,47 @@ Multi-source literature search, journal ranking, auto-citation, and PDF download
 
 > **First run:** `.\scripts\check-deps.ps1` → `references/setup-guide.md`
 > **Windows:** Use `Invoke-RestMethod` / `Invoke-WebRequest` — never Bash `curl` (returns exit 49 on Windows).
+> **Configure keys:** Say "帮我配置 API key" — the AI reads current config and writes missing keys directly.
+
+---
+
+## Mode 0 — Configure API Keys
+
+**Triggers:** "帮我配置key", "set up my API keys", "configure lit-search-cite", "我的key是..."
+
+Two config files. The AI reads both, fills in only the fields the user provides, and saves.
+
+### File 1 — `~/.lit-search-cite/config.json` (Python scripts)
+
+```json
+{
+  "api_keys": {
+    "semantic_scholar": "",   // s2k-... — free at semanticscholar.org/product/api
+    "onescholar":       "",   // sk_...  — journal ranking, scigreat.com
+    "unpaywall_email":  "",   // any email — PDF OA lookup
+    "elsevier":         "",   // Scopus/ScienceDirect API key
+    "springer":         "",   // Springer Nature API key
+    "wanfang":          "",   // 万方 API key
+    "wos":              ""    // Web of Science key
+  }
+}
+```
+
+### File 2 — `~/.claude/mcp.json` (MCP servers, requires Claude Code restart)
+
+Update only the `env` block inside the `ai4scholar` server entry:
+```json
+"AI4SCHOLAR_API_KEY": "sk-user-..."
+```
+
+**AI workflow:**
+1. Read `~/.lit-search-cite/config.json` (create with empty keys if missing).
+2. Read `~/.claude/mcp.json` — locate the `ai4scholar.env.AI4SCHOLAR_API_KEY` field.
+3. Ask the user only for keys that are currently empty/missing.
+4. Write both files. Remind user to **restart Claude Code** after mcp.json changes.
+5. Never overwrite a key that is already set unless the user explicitly provides a new value.
+
+> **Note for AI:** You CAN write these files directly with the Write/Edit tool — no interactive terminal needed. Do NOT touch any other fields in mcp.json.
 
 ---
 
