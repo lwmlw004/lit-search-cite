@@ -1,13 +1,13 @@
-# lit-search-cite — MCP Server Configuration
+# lit-search-cite — MCP 服务器配置模板
 
-Copy the relevant server blocks into your MCP config:
+将所需的服务器配置块复制到你的 MCP 配置文件中：
 
-- **Claude Code (Codex)**: `%USERPROFILE%\.claude\mcp.json`
-- **Claude Desktop**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **OpenCode / Cursor**: MCP settings panel
-- **Hermes / other agents**: agent's MCP config file
+- **Claude Code / Codex**：`%USERPROFILE%\.claude\mcp.json`
+- **Claude Desktop**：`%APPDATA%\Claude\claude_desktop_config.json`
+- **OpenCode / Cursor**：MCP 设置面板
+- **Hermes / 其他 Agent**：各 Agent 的 MCP 配置文件
 
-## Recommended (full setup)
+## 推荐配置（完整功能）
 
 ```json
 {
@@ -16,7 +16,7 @@ Copy the relevant server blocks into your MCP config:
       "command": "npx",
       "args": ["-y", "@ai4scholar/mcp-server"],
       "env": {
-        "AI4SCHOLAR_API_KEY": "sk-user-your-key-here"
+        "AI4SCHOLAR_API_KEY": "sk-user-你的密钥"
       }
     },
     "scansci-pdf": {
@@ -27,10 +27,9 @@ Copy the relevant server blocks into your MCP config:
 }
 ```
 
-## With Chrome DevTools MCP (paywall fallback)
+## 完整配置（含 Chrome DevTools MCP 付费墙兜底）
 
-Adds browser-based download for paywalled papers not covered by scansci-pdf.
-Requires Chrome started with `--remote-debugging-port=9222`. See `references/chrome-devtools.md`.
+scansci-pdf 所有通道失败时，通过已登录的 Chrome 浏览器直接下载，无需配置 WebVPN URL 或导出 cookies。需以 `--remote-debugging-port=9222` 启动 Chrome，详见 `references/chrome-devtools.md`。
 
 ```json
 {
@@ -39,7 +38,7 @@ Requires Chrome started with `--remote-debugging-port=9222`. See `references/chr
       "command": "npx",
       "args": ["-y", "@ai4scholar/mcp-server"],
       "env": {
-        "AI4SCHOLAR_API_KEY": "sk-user-your-key-here"
+        "AI4SCHOLAR_API_KEY": "sk-user-你的密钥"
       }
     },
     "scansci-pdf": {
@@ -57,9 +56,9 @@ Requires Chrome started with `--remote-debugging-port=9222`. See `references/chr
 }
 ```
 
-## Minimal (zero API key)
+## 最小配置（无需 API Key）
 
-If you don't have an ai4scholar key, the skill automatically falls back to free APIs (OpenAlex, CrossRef, PubMed, arXiv). You only need:
+无 ai4scholar Key 时，Skill 自动回退到免费 API（OpenAlex、CrossRef、PubMed、arXiv）：
 
 ```json
 {
@@ -72,12 +71,12 @@ If you don't have an ai4scholar key, the skill automatically falls back to free 
 }
 ```
 
-## API Key Registration
+## API Key 注册
 
-| Service | URL | Cost |
-|---------|-----|------|
-| ai4scholar | https://ai4scholar.net | Free tier (10 req/min) |
-| Semantic Scholar | https://www.semanticscholar.org/product/api | Free |
-| OneScholar | https://www.scigreat.com/s/app/?t=oneapi-info | Free (1000/day) |
-| Elsevier Scopus | https://dev.elsevier.com/ | Institutional |
-| Springer Nature | https://dev.springernature.com/ | Free |
+| 服务 | 注册地址 | 费用 |
+|------|---------|------|
+| ai4scholar | https://ai4scholar.net | 免费（10 次/分钟） |
+| Semantic Scholar | https://www.semanticscholar.org/product/api | 免费 |
+| OneScholar | https://www.scigreat.com/s/app/?t=oneapi-info | 免费（1000 次/天） |
+| Elsevier Scopus | https://dev.elsevier.com/ | 机构授权 |
+| Springer Nature | https://dev.springernature.com/ | 免费 |
