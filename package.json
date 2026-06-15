@@ -1,0 +1,43 @@
+{
+  "name": "lit-search-cite",
+  "version": "1.0.0",
+  "description": "Multi-source academic literature search, journal ranking, auto-citation, and PDF download skill — supporting CNKI, arXiv, PubMed, Google Scholar, and more.",
+  "keywords": [
+    "claude-code",
+    "claude-skill",
+    "opencode-skill",
+    "academic",
+    "literature-search",
+    "paper-download",
+    "citation",
+    "journal-ranking",
+    "cnki",
+    "pubmed",
+    "arxiv",
+    "google-scholar"
+  ],
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<user>/lit-search-cite"
+  },
+  "bin": {
+    "lit-search-cite": "./install.js"
+  },
+  "files": [
+    "SKILL.md",
+    "AGENTS.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "references/",
+    "scripts/",
+    "evals/",
+    ".claude/",
+    "install.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

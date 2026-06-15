@@ -1,0 +1,39 @@
+{
+  "skill_name": "lit-search-cite",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我找5篇关于大语言模型（LLM）在代码生成任务中应用的论文，要求2023年以后发表的，最好是高引用的英文论文。搜索完后用GB/T 7714格式列出参考文献。",
+      "expected_output": "返回5篇2023年后关于LLM代码生成的高引论文，包含标题、作者、期刊/会议、年份、DOI，并附GB/T 7714格式的参考文献列表。",
+      "assertions": [
+        {"name": "returns_5_or_more_papers", "description": "结果中包含至少5篇论文"},
+        {"name": "papers_are_post_2023", "description": "所有论文发表年份 >= 2023"},
+        {"name": "includes_gbt7714_references", "description": "输出包含格式化的GB/T 7714参考文献列表"},
+        {"name": "includes_doi_or_url", "description": "每篇论文有DOI或可访问链接"},
+        {"name": "on_topic_llm_code_generation", "description": "所有论文与LLM代码生成主题相关"}
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我写了下面这段话，请帮我加上合适的学术引用：\n\n「Transformer架构自2017年提出以来彻底改变了自然语言处理领域。BERT通过双向预训练在多项NLP基准任务上取得了显著提升，而GPT系列模型则展示了大规模语言模型的涌现能力。近年来，基于Instruction Tuning的方法使模型能够更好地遵循人类指令。」\n\n请用APA格式标注引用。",
+      "expected_output": "对段落中每个关键声明分别找到对应论文，插入行内引用，并在末尾附完整APA格式参考文献列表。",
+      "assertions": [
+        {"name": "inline_citations_inserted", "description": "段落中有(Author, Year)格式的行内引用标注"},
+        {"name": "transformer_paper_cited", "description": "引用了Transformer原始论文（Vaswani et al., 2017）"},
+        {"name": "bert_paper_cited", "description": "引用了BERT论文（Devlin et al.）"},
+        {"name": "apa_reference_list", "description": "末尾有APA格式的完整参考文献列表"},
+        {"name": "references_have_doi", "description": "参考文献包含DOI或可验证链接"}
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "请帮我下载这篇arXiv论文的PDF：arxiv ID是 2303.08774（即GPT-4 Technical Report）。下载成功后告诉我文件保存在哪里。",
+      "expected_output": "调用scansci-pdf smart_download工具，成功下载PDF并报告本地文件路径和文件大小。",
+      "assertions": [
+        {"name": "attempts_pdf_download", "description": "输出中明确尝试了PDF下载"},
+        {"name": "reports_file_path", "description": "成功时报告了本地文件路径"},
+        {"name": "identifies_correct_paper", "description": "正确识别了论文为GPT-4 Technical Report"}
+      ]
+    }
+  ]
+}

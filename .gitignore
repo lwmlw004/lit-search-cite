@@ -1,0 +1,22 @@
+# npm
+node_modules/
+
+# Cache and runtime
+.lit-search-cite/cache/
+*.pyc
+__pycache__/
+
+# Test/eval artifacts  
+evals/loop-results/
+evals/workspace/
+
+# Downloaded PDFs
+downloads/
+*.pdf
+
+# Config with API keys
+config.json
+
+# OS files
+.DS_Store
+Thumbs.db

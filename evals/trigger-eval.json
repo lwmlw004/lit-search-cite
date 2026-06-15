@@ -1,0 +1,82 @@
+[
+  {
+    "query": "我在写一篇关于联邦学习隐私保护的毕业论文，需要找一些2022年之后发表在顶会或SCI期刊的英文文献，最好能有DOI，方便导师核查。",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我在这段文字里加引用：「深度学习已广泛应用于图像识别、语音识别和自然语言处理等领域，ResNet的提出解决了深度网络训练中的梯度消失问题。」用GB/T 7714格式。",
+    "should_trigger": true
+  },
+  {
+    "query": "我想下载这篇论文的PDF，DOI是10.1038/s41586-023-06291-2，是关于AlphaFold蛋白质结构预测的。",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我写一篇2000字的综述，主题是扩散模型在图像生成中的应用，要求覆盖DDPM、Stable Diffusion、DALL-E等关键工作。",
+    "should_trigger": true
+  },
+  {
+    "query": "这篇文章和我的研究方向相关吗？论文标题是《Attention Is All You Need》，我做的是机器翻译。",
+    "should_trigger": true
+  },
+  {
+    "query": "我需要搜索知网上关于中医治疗新冠的临床研究，要求2020年后发表的核心期刊论文。",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我查一下Nature杂志的影响因子和中科院分区是几区，我在考虑投稿方向。",
+    "should_trigger": true
+  },
+  {
+    "query": "找一些关于transformer在计算机视觉中应用的seminal papers，要引用量超过500次的那种经典文章。",
+    "should_trigger": true
+  },
+  {
+    "query": "我的导师让我整理20篇关于强化学习在机器人控制中应用的论文，要有摘要、作者、发表年份，最好能标出哪些是高质量期刊。",
+    "should_trigger": true
+  },
+  {
+    "query": "arXiv上有篇论文叫Llama 2，帮我把它的PDF下载下来，存到我的Papers文件夹里。",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我写一个Python函数，输入一个列表，输出其中所有偶数的平方和。",
+    "should_trigger": false
+  },
+  {
+    "query": "我的MySQL数据库查询很慢，SELECT * FROM orders WHERE user_id=123 要5秒，怎么优化？",
+    "should_trigger": false
+  },
+  {
+    "query": "给我翻译这段英文：'The quick brown fox jumps over the lazy dog.'",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我总结一下这篇新闻报道的主要内容，文章说的是2024年巴黎奥运会的开幕式。",
+    "should_trigger": false
+  },
+  {
+    "query": "我想学习机器学习，有没有推荐的入门书籍或者网课？",
+    "should_trigger": false
+  },
+  {
+    "query": "用Python画一个柱状图，数据是各城市GDP：北京50000，上海47000，深圳36000。",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我检查一下这段代码有没有bug：def factorial(n): return n * factorial(n-1)",
+    "should_trigger": false
+  },
+  {
+    "query": "我需要写一封给导师的邮件，说明我下周无法参加组会的原因。",
+    "should_trigger": false
+  },
+  {
+    "query": "用LaTeX写一个矩阵公式，A乘以B等于C，三个都是3x3矩阵。",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我解释一下什么是反向传播算法，用通俗的语言，不要太学术化。",
+    "should_trigger": false
+  }
+]
