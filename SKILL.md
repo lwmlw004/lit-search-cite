@@ -13,31 +13,36 @@ Multi-source literature search, journal ranking, auto-citation, and PDF download
 
 ---
 
+## Primary Workflow (MCP-first)
+
+**Search → Download → Cite. All headless after MCP setup.**
+
+```
+Search:   ai4scholar MCP  →  multi-search.py (fallback)
+Download: scansci-pdf MCP  →  pdf-fetch.py (OA fallback)
+Chinese:  ai4scholar Google Scholar MCP (Chinese keywords)  →  cnki-search.ps1 (browser URLs)
+```
+
+The Playwright scripts (`cnki-playwright.py`, `google-scholar.py`) are **optional advanced paths** — only needed if MCP is unavailable or you require structured CNKI metadata with institutional VPN.
+
+---
+
 ## Source Selection (Quick Reference)
 
-Pick 1–2 sources per search. More sources ≠ better results — use domain routing.
+| Domain | MCP path (primary) | Script fallback |
+|--------|--------------------|-----------------|
+| CS / AI | `search_semantic` + `search_google_scholar` | `multi-search.py -d cs` |
+| Engineering | `search_semantic` | `multi-search.py -d engineering` |
+| Chemistry / Materials | `search_semantic` + `search_google_scholar` | `multi-search.py -d chemistry` |
+| Biomedicine | `search_pubmed` + `search_semantic` | `multi-search.py -d biomedicine` |
+| Physics / Math | `search_arxiv` + `search_semantic` | `multi-search.py -d physics` |
+| Social / Humanities | `search_google_scholar` | `multi-search.py -d social` |
+| **Chinese** | `search_google_scholar` (Chinese keywords) | `cnki-search.ps1` browser URLs |
+| General | `search_semantic` + `search_google_scholar` | `multi-search.py -d general` |
 
-| Domain | Primary (with key) | Free fallback | Journal ranking |
-|--------|--------------------|---------------|-----------------|
-| CS / AI | `ai4scholar` MCP → arXiv | `multi-search.py -d cs` | Auto via offline DB |
-| Engineering | `ai4scholar` MCP → Semantic Scholar | `multi-search.py -d engineering` | Auto via offline DB |
-| Chemistry / Materials | `ai4scholar` MCP → Semantic Scholar | `multi-search.py -d chemistry` | Auto via offline DB |
-| Biomedicine | `ai4scholar` MCP → PubMed | `multi-search.py -d biomedicine` | Auto via offline DB |
-| Physics / Math | arXiv + Semantic Scholar | `multi-search.py -d physics` | Auto via offline DB |
-| Social / Humanities | Google Scholar + Semantic Scholar | `multi-search.py -d social` | `journal-rank.py` |
-| **Chinese** | CNKI Playwright + Wanfang API | CNKI browser URLs via `cnki-search.ps1` | `journal-rank.py` |
-| General | `multi-search.py -d general` | Same (covers OpenAlex + CrossRef + PubMed) | Auto via offline DB |
+**PDF download:** Always try `scansci_pdf_smart_download` first — covers OA, Sci-Hub, CARSI, ElsevierAPI, CORE, LibGen. Fall back to `pdf-fetch.py` only for OA papers (DOI required).
 
-**Google Scholar:** `ai4scholar` MCP (fastest) → `google-scholar.py` (one-time Playwright setup) → OpenAlex/CrossRef (zero-config).
-
-**Journal ranking:**
-```bash
-# OneScholar API (requires key) — returns IF, JCR, CAS, CiteScore, risk
-python scripts/journal-rank.py -j "Nature" "Adv. Mater." "JACS"
-
-# Offline fallback (zero-config, 300+ journals) — used automatically by multi-search.py
-# journal-rank.py itself requires the key; offline DB is built into multi-search.py only
-```
+**Journal ranking:** Use offline DB via `multi-search.py` (300+ journals, zero-config). `journal-rank.py` requires OneScholar API key.
 
 ---
 
@@ -47,25 +52,34 @@ python scripts/journal-rank.py -j "Nature" "Adv. Mater." "JACS"
 
 **Step 1 — Clarify:** topic, domain (→ table above), year range, language, how many results.
 
-**Step 2 — Search:**
+**Step 2 — Search (MCP-first):**
 
+```python
+# Primary: Semantic Scholar (best relevance, 214M papers)
+search_semantic(query="ethylbenzene dehydrogenation styrene catalyst", max_results=12)
+
+# Deep text match (finds specific methods, data, claims)
+search_semantic_snippets(query="oxidative dehydrogenation ethylbenzene SMART process", limit=8)
+
+# Google Scholar (covers Chinese literature too)
+search_google_scholar(query="乙苯脱氢 苯乙烯工艺 催化剂", max_results=10, year_from=2018)
+
+# PubMed for biomedical
+search_pubmed(query="CRISPR gene editing therapy", max_results=15)
+
+# arXiv for CS/physics preprints
+search_arxiv(query="transformer attention mechanism", max_results=10)
+```
+
+**Step 2 (fallback — no MCP):**
 ```bash
-# Zero-config: OpenAlex + CrossRef + PubMed (domain-routed)
+# Zero-config: OpenAlex + CrossRef + PubMed
 python scripts/multi-search.py -q "styrene shape memory polymer" -d chemistry
-
-# With live journal rankings
-python scripts/multi-search.py -q "transformer attention" -d cs --online-rank
 
 # Year filter + JSON output
 python scripts/multi-search.py -q "cancer immunotherapy" -d biomedicine --year-from 2022 -t 20
 
-# Google Scholar (Playwright, one-time setup required)
-python scripts/google-scholar.py --query "attention is all you need" --limit 15 --since 2020
-
-# Chinese literature (CNKI Playwright — requires prior setup)
-python scripts/cnki-playwright.py --query "大语言模型 代码生成" --limit 20
-
-# Chinese literature (Wanfang API + browser URLs — no setup needed for URLs)
+# Chinese literature browser URLs (no setup needed)
 .\scripts\cnki-search.ps1 -Query "大语言模型 代码生成"
 ```
 
@@ -74,7 +88,7 @@ python scripts/cnki-playwright.py --query "大语言模型 代码生成" --limit
 [N] Title (Year)
     Authors  : Lead Author et al.
     Venue    : Journal Name  |  Tier: IF=X.X JCR-Q1 CAS-1区
-    Citations: N  |  Source: OpenAlex
+    Citations: N  |  Source: SemanticScholar
     DOI      : https://doi.org/10.xxxx/...
     Relevance: why it matches (1–2 sentences)
 ```
@@ -91,7 +105,7 @@ python scripts/cnki-playwright.py --query "大语言模型 代码生成" --limit
 
 **Workflow:**
 1. Read user's text. Identify each claim that needs a citation. Mark as `[1]`, `[2]`, etc.
-2. For each claim, run one targeted search. Pick best match by relevance + citation count.
+2. For each claim, run one targeted `search_semantic` or `search_semantic_snippets`. Pick best match by relevance + citation count.
 3. Produce output:
 
 ```
@@ -113,7 +127,7 @@ python scripts/cnki-playwright.py --query "大语言模型 代码生成" --limit
 **Triggers:** "write a literature review", "综述", "survey", "related work section"
 
 1. Clarify: topic, 3–5 sub-themes, year range, target length, citation style, language.
-2. **Round 1 (broad):** 2–3 queries per sub-theme via `multi-search.py`, collect 20–30 papers.
+2. **Round 1 (broad):** `search_semantic` × 2–3 queries per sub-theme; collect 20–30 papers.
 3. **Round 2 (fill gaps):** `get_semantic_citations` on key papers; `get_semantic_recommendations` for related work.
 4. **Cluster** by sub-theme. Draft structure:
 
@@ -131,8 +145,8 @@ python scripts/cnki-playwright.py --query "大语言模型 代码生成" --limit
 
 Score **1–10** using: topic fit (40%) + methodology (20%) + recency (20%) + venue quality (20%).
 
-For venue quality: `python scripts/journal-rank.py -j "JournalName"` (requires OneScholar key).
-Also run `get_semantic_recommendations_for_paper` to surface related work the user may have missed.
+For venue quality: check offline tier via `multi-search.py` output, or `journal-rank.py` (requires OneScholar key).
+Run `get_semantic_recommendations_for_paper` to surface related work the user may have missed.
 
 ---
 
@@ -140,28 +154,39 @@ Also run `get_semantic_recommendations_for_paper` to surface related work the us
 
 **Triggers:** "download this paper", "get the PDF", user says yes after Mode 1
 
-### English papers
+### Primary — scansci-pdf MCP (zero-config, 13+ sources)
 
+```python
+# Works for DOI and arXiv IDs, also returns BibTeX
+scansci_pdf_smart_download(identifier="10.1016/j.apcatb.2022.121070", bibtex=True)
+scansci_pdf_smart_download(identifier="2301.12345")   # arXiv
+
+# For paywalled papers via institutional access (one-time browser login, then headless):
+scansci_pdf_carsi_login(publisher="sciencedirect")  # or springer, wiley, ieee, nature
+# After login, scansci_pdf_smart_download works headlessly for all future downloads
 ```
-# Primary — scansci-pdf MCP (headless, 13+ sources, zero-config):
-scansci_pdf_smart_download(identifier="10.xxxx/..." or "arXiv:2401.12345")
 
-# Fallback — pdf-fetch (DOI only, no arXiv):
-python scripts/pdf-fetch.py --doi "10.xxxx/..." --output ./Papers
-.\scripts\pdf-fetch.ps1 -DOI "10.xxxx/..." -OutputPath ".\Papers"
+### Fallback — pdf-fetch scripts (OA papers, DOI only)
+
+```bash
+python scripts/pdf-fetch.py --doi "10.1038/s41586-021-03819-2" --output ./Papers
+.\scripts\pdf-fetch.ps1 -DOI "10.1038/s41586-021-03819-2" -OutputPath ".\Papers"
 ```
-
-For paywalled papers: one-time browser login (`scansci_pdf_import_browser_cookies` / `scansci_pdf_carsi_login` / `scansci_pdf_ezproxy_login`) → cookies saved permanently → all future downloads headless.
 
 ### Chinese papers (CNKI)
 
-Headless search works after VPN setup. PDF download requires a visible browser due to CAPTCHA:
-```bash
-# Search (headless after setup)
-python scripts/cnki-playwright.py --query "形状记忆 聚合物" --limit 20
+CNKI PDF download via CARSI (one-time browser login):
+```python
+scansci_pdf_carsi_login()          # opens browser → log in with your university account
+scansci_pdf_smart_download(identifier="10.xxxx/...")  # headless after first login
+```
 
-# Download PDFs (needs visible browser for CAPTCHA)
-python scripts/cnki-playwright.py --query "形状记忆 聚合物" --download --output ./Papers --no-headless
+For CNKI search + structured metadata (advanced, requires VPN setup):
+```bash
+# One-time setup:
+python scripts/cnki-playwright.py --setup --school scau
+# Search:
+python scripts/cnki-playwright.py --query "乙苯脱氢 苯乙烯工艺" --limit 20
 ```
 
 ---

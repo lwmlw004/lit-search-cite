@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.11] — 2026-06-15
+
+### Changed
+- `SKILL.md`: MCP-first workflow — `ai4scholar` MCP (Semantic Scholar + Google Scholar) and `scansci-pdf` MCP are now the **primary paths**; Playwright scripts (`cnki-playwright.py`, `google-scholar.py`) demoted to optional/advanced. Google Scholar MCP replaces `google-scholar.py` entirely (no setup, no cookies, headless). `scansci-pdf` + CARSI replaces `cnki-playwright.py --download`. Source selection table rewritten around MCP tools. Mode 1/2/3/5 all lead with MCP calls.
+
+---
+
 ## [1.0.10] — 2026-06-15
 
 ### Fixed
