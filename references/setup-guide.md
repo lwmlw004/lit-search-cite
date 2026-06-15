@@ -1,19 +1,19 @@
-# Setup Guide — lit-search-cite
+# 安装指南
 
-Complete installation and one-time configuration.
+完整的一次性配置。完成后所有搜索和下载无需打开浏览器即可运行。
 
 ---
 
-## Step 1 — Install System Dependencies
+## 第一步 — 安装系统依赖
 
-| Component | Required for | Install (Windows) |
+| 组件 | 用途 | 安装命令 (Windows) |
 |-----------|-------------|-------------------|
 | Node.js 18+ | ai4scholar MCP | `winget install OpenJS.NodeJS` |
 | Python 3.10+ | CNKI Playwright, scansci-pdf | `winget install Python.Python.3.11` |
-| Playwright + Chromium | CNKI, Google Scholar browser | `pip install playwright && playwright install chromium` |
-| uv | scansci-pdf MCP | `pip install uv` or `winget install astral-sh.uv` |
+| Playwright + Chromium | CNKI、Google Scholar 浏览器引擎 | `pip install playwright && playwright install chromium` |
+| uv | scansci-pdf MCP 运行时 | `pip install uv` 或 `winget install astral-sh.uv` |
 
-**Verify:**
+**验证安装：**
 ```powershell
 node --version          # v18+
 python --version        # 3.10+
@@ -23,9 +23,9 @@ uvx --version
 
 ---
 
-## Step 2 — MCP Servers
+## 第二步 — 配置 MCP 服务器
 
-Edit `%USERPROFILE%\.claude\mcp.json` and add:
+编辑 `%USERPROFILE%\.claude\mcp.json`，加入：
 
 ```json
 {
@@ -33,7 +33,7 @@ Edit `%USERPROFILE%\.claude\mcp.json` and add:
     "ai4scholar": {
       "command": "npx",
       "args": ["-y", "@ai4scholar/mcp-server"],
-      "env": { "AI4SCHOLAR_API_KEY": "sk-user-your-key-here" }
+      "env": { "AI4SCHOLAR_API_KEY": "sk-user-你的密钥" }
     },
     "scansci-pdf": {
       "command": "uvx",
@@ -43,97 +43,97 @@ Edit `%USERPROFILE%\.claude\mcp.json` and add:
 }
 ```
 
-Restart Claude Code. Copy-paste template: `references/mcp-template.json`.
+**重启 Claude Code** 后生效。复制粘贴模板：`references/mcp-template.json`。
 
 ---
 
-## Step 3 — API Keys
+## 第三步 — API 密钥
 
 ```powershell
 .\scripts\setup.ps1
 ```
 
-Interactive wizard. Keys saved to `~/.lit-search-cite/config.json`. Priority:
+交互式配置向导。密钥保存到 `~/.lit-search-cite/config.json`。优先级：
 
-| Key | Impact |
+| 密钥 | 用途 |
 |-----|--------|
-| `ai4scholar` | Google Scholar + S2 (214M papers) — highest impact |
-| `unpaywall_email` | OA PDF discovery — free, any email |
-| `onescholar` | Live journal rankings (JCR/CAS/IF) |
-| `semantic_scholar` | S2 direct fallback |
-| `wanfang` | Structured Chinese search |
+| `ai4scholar` | Google Scholar + S2（2.14 亿篇）— 最推荐 |
+| `unpaywall_email` | OA PDF 发现 — 免费，任意邮箱 |
+| `onescholar` | 在线期刊等级查询（JCR/CAS/IF） |
+| `semantic_scholar` | S2 直接访问备选 |
+| `wanfang` | 万方中文文献结构化检索 |
 
-View: `.\scripts\setup.ps1 -Show`
+查看：`.\scripts\setup.ps1 -Show`
 
 ---
 
-## Step 4 — Google Scholar Playwright (Optional)
+## 第四步 — Google Scholar Playwright（可选）
 
-One-time browser setup for real Google Scholar results:
+一次性浏览器配置，获取真实 Google Scholar 结果：
 ```powershell
 python scripts/google-scholar.py --setup
-# Browser opens → solve CAPTCHA → press Enter in terminal
+# 浏览器打开 → 解决 CAPTCHA → 终端按 Enter
 ```
-Then headless forever:
+之后永久无头运行：
 ```powershell
 python scripts/google-scholar.py --query "styrene smart polymer" --limit 10
 python scripts/google-scholar.py --status
 ```
-Cookie expires ~7 days. Refresh: `python scripts/google-scholar.py --login-only`
+Cookie 约 7 天过期。刷新：`python scripts/google-scholar.py --login-only`
 
 ---
 
-## Step 5 — CNKI WebVPN (Chinese Literature)
+## 第五步 — 知网 WebVPN（中文文献）
 
-One-time setup with auto-detection for 76 Chinese universities:
+一次性配置，内置 76 所中国高校 VPN 地址：
 ```powershell
-python scripts/cnki-playwright.py --setup --school scau       # abbreviation
-python scripts/cnki-playwright.py --setup --school "清华大学"  # Chinese name
+python scripts/cnki-playwright.py --setup --school scau       # 缩写
+python scripts/cnki-playwright.py --setup --school "清华大学"  # 中文名
 ```
-Then headless search works:
+之后无头搜索：
 ```powershell
 python scripts/cnki-playwright.py --query "形状记忆 聚合物" --limit 20
 ```
-Session expires ~7 days. Refresh: `python scripts/cnki-playwright.py --login-only --no-headless`
+Session 约 7 天过期。刷新：`python scripts/cnki-playwright.py --login-only --no-headless`
 
 ---
 
-## Step 6 — Publisher PDF Access
+## 第六步 — 出版商 PDF 访问（付费论文）
 
-For paywalled papers. Tell Claude one of:
-- "帮我配置 scansci-pdf 的 ScienceDirect Cookie" (universal)
-- "帮我配置 scansci-pdf CARSI 登录" (Chinese universities)
-- "帮我配置 scansci-pdf EZProxy 登录" (library proxy)
+对付费论文。告诉 Claude：
+- "帮我配置 scansci-pdf 的 ScienceDirect Cookie"（通用）
+- "帮我配置 scansci-pdf CARSI 登录"（国内高校）
+- "帮我配置 scansci-pdf EZProxy 登录"（图书馆代理）
 
-Browser opens → log in once → cookies saved → permanent headless PDF download.
+浏览器打开 → 登录一次 → Cookie 保存 → 永久无头下载。
 
 ---
 
-## Step 7 — Verify
+## 第七步 — 验证
 
 ```powershell
 .\scripts\check-deps.ps1
 ```
 
-Expected: `Status: READY — all critical components configured.`
+预期输出：`Status: READY — all critical components configured.`
 
 ---
 
-## Minimum Working Config
+## 最低可用配置
 
-| Tier | Setup needed | What works |
+| 级别 | 需要配置 | 可用功能 |
 |------|-------------|------------|
-| Zero-config | Nothing | PubMed, arXiv, OpenAlex, CrossRef, OA PDF |
-| Recommended | Steps 2-3 | + Google Scholar, S2, journal rankings |
-| Full English | + Step 6 | + Paywalled PDF from any publisher |
-| Full Chinese | + Step 5 | + CNKI headless search |
-| Complete | All steps | + Wanfang structured Chinese results |
+| 零配置 | 无 | PubMed、arXiv、OpenAlex、CrossRef、OA PDF |
+| 推荐 | 第二步 + 第三步 | + Google Scholar、S2、期刊等级 |
+| 完整英文 | + 第六步 | + 任意出版商付费 PDF |
+| 完整中文 | + 第五步 | + 知网无头搜索 |
+| 全部 | 全部 | + 万方结构化中文结果 |
 
 ---
 
-## Config File
+## 配置文件
 
-`~/.lit-search-cite/config.json` (local only, never share):
+`~/.lit-search-cite/config.json`（仅本地，切勿分享）：
 
 ```json
 {
@@ -151,4 +151,4 @@ Expected: `Status: READY — all critical components configured.`
 }
 ```
 
-> **For AI agents:** Do NOT run `setup.ps1`, `cnki-playwright.py --setup/--login-only`, or scansci-pdf login tools via shell — they require interactive terminal + visible browser. Tell the user the exact command to run themselves.
+> **给 AI 的提示：** 不要通过 shell 工具运行 `setup.ps1`、`cnki-playwright.py --setup/--login-only` 或 scansci-pdf 登录工具 —— 它们需要交互式终端和可见浏览器。告诉用户确切的命令让他们自己运行。
