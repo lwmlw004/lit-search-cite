@@ -1,6 +1,6 @@
 ---
 name: lit-search-cite
-description: Use when a user needs to find or work with academic papers: searching databases (知网/CNKI, arXiv, PubMed, Google Scholar, 万方) for literature on a topic; downloading a paper PDF by DOI, arXiv ID, or title; looking up journal rankings (影响因子, 中科院分区, JCR quartile, CCF tier); judging whether a specific paper is relevant to their research direction; adding formatted citations (GB/T 7714, APA, IEEE) to existing text; or drafting a literature review or related-work section. Covers Chinese (知网/万方/维普) and English research workflows.
+description: "Use when a user needs to find or work with academic papers: searching databases (知网/CNKI, arXiv, PubMed, Google Scholar, 万方) for literature on a topic; downloading a paper PDF by DOI, arXiv ID, or title; looking up journal rankings (影响因子, 中科院分区, JCR quartile, CCF tier); judging whether a specific paper is relevant to their research direction; adding formatted citations (GB/T 7714, APA, IEEE) to existing text; or drafting a literature review or related-work section. Covers Chinese (知网/万方/维普) and English research workflows."
 compatibility: opencode, claude-code, codex, hermes, claude-desktop
 ---
 
