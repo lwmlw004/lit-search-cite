@@ -10,8 +10,8 @@ const SKILL_NAME = 'lit-search-cite';
 const SRC        = __dirname;
 
 // Only these root-level entries are copied into each skill location.
-// Subdirectories (scripts/, references/) are copied fully.
-const ROOT_ALLOWLIST = new Set(['SKILL.md', 'AGENTS.md', 'scripts', 'references']);
+// Subdirectories (scripts/, references/, docs/, evals/) are copied fully.
+const ROOT_ALLOWLIST = new Set(['SKILL.md', 'AGENTS.md', 'scripts', 'references', 'docs', 'evals']);
 
 const TARGETS = {
   claude: {
@@ -101,7 +101,7 @@ lit-search-cite v${PKG.version}
 Multi-source academic literature search + citation skill installer.
 
 Usage:
-  npx lit-search-cite [options]
+  npx lit-search-cite@latest [options]
 
 Options:
   (no flags)       Install to all detected platforms

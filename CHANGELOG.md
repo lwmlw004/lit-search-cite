@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- `scripts/web-capture.py` for web-literature-capture from URL, saved HTML, or copied text, with HTML meta, JSON-LD, DOI regex, PubMed, arXiv, CrossRef/OpenAlex enrichment, stable DOI/title dedupe, and BibTeX/RIS/CSV/Markdown/JSON export.
+- `scripts/web-capture.ps1` Windows wrapper and `scripts/test-web-capture.py` no-network test harness.
+- `evals/web-capture/` fixtures for PubMed, publisher meta tags, JSON-LD, reference lists, and arXiv pages.
+- `docs/browser-capture.md`, `docs/scansci-pdf-integration.md`, and `docs/onefind-workflow.md`.
+
+### Changed
+- Installer/package allowlist now includes `docs/` and `evals/` so web-capture docs and fixtures are available after install.
+- README, SKILL, and AGENTS document the new web capture workflow and legal-only `--pdf legal` boundary.
+
+---
+
 ## [1.0.23] — 2026-06-15
 
 ### Added

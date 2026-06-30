@@ -6,7 +6,7 @@ compatibility: opencode, claude-code, codex, hermes, claude-desktop
 
 # Lit-Search-Cite: Academic Literature & Citation Skill
 
-Multi-source literature search, journal ranking, auto-citation, and PDF download. English & Chinese.
+Multi-source literature search, web literature capture, journal ranking, auto-citation, and PDF download. English & Chinese.
 
 > **First run:** `.\scripts\check-deps.ps1` → `references/setup-guide.md`
 > **Windows:** Use `Invoke-RestMethod` / `Invoke-WebRequest` — never Bash `curl` (returns exit 49 on Windows).
@@ -59,6 +59,7 @@ Update only the `env` block inside the `ai4scholar` server entry:
 **Search → Download → Cite. All headless after MCP setup.**
 
 ```
+Capture:  web-capture.py for URL / saved HTML / copied text / DOI lists
 Search:   ai4scholar MCP  →  multi-search.py (fallback)
 Download: scansci-pdf MCP  →  OpenCLI browser (paywall fallback)  →  pdf-fetch.py (OA only)
 Chinese:  ai4scholar Google Scholar MCP (Chinese keywords)  →  OpenCLI browser (CNKI with existing login)
@@ -233,6 +234,38 @@ See `references/chrome-devtools.md` for the older Chrome DevTools MCP approach (
 
 ---
 
+## Mode 6 — Web Literature Capture
+
+**Triggers:** "从网页抓文献", "capture references from this page", "extract DOI from HTML", "PubMed 页面导出 BibTeX", "Google Scholar results to RIS", "web-literature-capture"
+
+Use `scripts/web-capture.py` when the user provides a URL, saved HTML, copied web text, a PubMed/arXiv/publisher page, a search-results page, or a reference list page.
+
+```bash
+# Single publisher page
+python scripts/web-capture.py --url "https://example.com/article" --out references/captured --format bibtex,ris,csv,md,json
+
+# Saved HTML
+python scripts/web-capture.py --html page.html --out references/captured
+
+# Copied reference list text
+python scripts/web-capture.py --text copied.txt --out references/captured --dedupe doi
+
+# PubMed page with legal OA PDF lookup
+python scripts/web-capture.py --url "https://pubmed.ncbi.nlm.nih.gov/12345678/" --pdf legal --out references/captured
+```
+
+Extraction order: HTML meta tags (`citation_*`, Dublin Core, PRISM, OpenGraph), JSON-LD (`ScholarlyArticle`, `Article`, `CreativeWork`), DOI regex, PubMed PMID cues, arXiv IDs, then batch DOI enrichment.
+
+Enrichment priority: CrossRef DOI → OpenAlex DOI → PubMed → arXiv → title fallback through CrossRef/OpenAlex. Do not let one failed record stop the batch.
+
+Outputs are written to `references/captured/YYYYMMDD_HHMMSS/`: `captured.json`, `captured.csv`, `captured.bib`, `captured.ris`, `captured.md`, `dois.txt`, `failed.txt`, and `run_report.md`.
+
+For this mode, `--pdf legal` may only use publisher-provided open PDF links, Unpaywall, OpenAlex OA locations, EuropePMC/PubMed Central, and arXiv. Do not embed Sci-Hub, LibGen, Anna's Archive, or paywall-circumvention logic in `web-capture.py`. If the user has scansci-pdf configured, treat it as an optional external follow-up using `dois.txt`; see `docs/scansci-pdf-integration.md`.
+
+For browser-side collection patterns and the bookmarklet, read `docs/browser-capture.md`. For local knowledge-base indexing after capture, read `docs/onefind-workflow.md`.
+
+---
+
 ## Reference Files
 
 | File | When to read |
@@ -245,6 +278,9 @@ See `references/chrome-devtools.md` for the older Chrome DevTools MCP approach (
 | `references/chrome-devtools.md` | Chrome DevTools MCP — legacy approach, requires `--remote-debugging-port=9222` |
 | `references/journal-ranks.json` | 300+ journal tier offline DB (built into multi-search scripts) |
 | `references/mcp-template.md` | MCP server config template (copy to `%USERPROFILE%\.claude\mcp.json`) |
+| `docs/browser-capture.md` | URL / saved HTML / bookmarklet capture workflows |
+| `docs/scansci-pdf-integration.md` | Optional scansci-pdf handoff boundary using `dois.txt` |
+| `docs/onefind-workflow.md` | OneFind / Zotero / EndNote local indexing workflow after capture |
 
 ---
 

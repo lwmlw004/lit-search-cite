@@ -1,0 +1,6 @@
+References
+
+1. A. Example and B. Researcher. Catalytic conversion of captured carbon dioxide. DOI: 10.1234/example.2024.001.
+2. C. Nguyen and D. Lee. Machine learning assisted reaction discovery. https://doi.org/10.5678/jsonld.2023.002
+3. Duplicate punctuation case: doi:10.1234/example.2024.001).
+4. E. Patel. Materials informatics benchmark. DOI 10.9999/materials.2022.777;

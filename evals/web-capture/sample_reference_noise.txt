@@ -1,0 +1,10 @@
+Noisy mixed references for robustness checks.
+
+1. Science article: Tang et al. DOI：https://doi.org/10.1126/science.abl4322。
+2. SciEngine article, DOI: 10.1007/s11426-026-3403-4）
+3. PubMed-style citation. doi:10.1038/s41586-021-03819-2.
+4. Duplicate with English parenthesis: (10.1038/s41586-021-03819-2).
+5. DOI split across line should keep only valid token:
+   https://doi.org/10.48550/arXiv.1706.03762;
+6. No DOI title fallback candidate:
+   A deliberately DOI-free reference title for fallback smoke testing.

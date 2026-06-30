@@ -27,7 +27,9 @@
     "LICENSE",
     "cli.js",
     "scripts/",
-    "references/"
+    "references/",
+    "docs/",
+    "evals/"
   ],
   "scripts": {
     "postinstall": "node cli.js"
