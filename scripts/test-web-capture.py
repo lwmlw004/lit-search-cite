@@ -65,6 +65,16 @@ def test_markup_sanitized_for_exports(wc) -> None:
     assert_true(article["journal"] == "Journal Name", f"Journal not sanitized: {article['journal']}")
 
 
+def test_sub_sup_tags_do_not_insert_spaces(wc) -> None:
+    article = wc.article_template(
+        title="A biomimetic S<sub>H</sub>2 cross-coupling mechanism for quaternary sp<sup>3</sup>-carbon formation"
+    )
+    assert_true(
+        article["title"] == "A biomimetic SH2 cross-coupling mechanism for quaternary sp3-carbon formation",
+        f"Sub/sup tags inserted spaces: {article['title']}",
+    )
+
+
 def test_arxiv_detection_requires_prefix(wc) -> None:
     assert_true(
         wc.extract_arxiv_id("DOI 10.48550/arXiv.1706.03762", "") == "",
@@ -274,6 +284,7 @@ def main() -> int:
         test_doi_regex,
         lambda module: test_noisy_reference_dois(module, fixtures),
         test_markup_sanitized_for_exports,
+        test_sub_sup_tags_do_not_insert_spaces,
         test_arxiv_detection_requires_prefix,
         lambda module: test_meta_extraction(module, fixtures),
         lambda module: test_citation_pdf_url_extraction(module, fixtures),

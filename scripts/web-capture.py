@@ -161,6 +161,7 @@ def extract_dois(text: str, unique: bool = True) -> list[str]:
 def clean_text(text: str) -> str:
     text = html.unescape(text or "")
     text = re.sub(r"<(script|style)\b.*?</\1>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?\s*(sub|sup)\b[^>]*>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
