@@ -24,3 +24,18 @@ Thumbs.db
 # Test screenshots
 *.png
 *.jpg
+
+# web-capture runtime outputs
+references/captured/
+**/pdfs/
+**/captured.json
+**/captured.csv
+**/captured.bib
+**/captured.ris
+**/captured.md
+**/dois.txt
+**/failed.txt
+**/run_report.md
+**/pdf_manifest.json
+**/onefind_index.md
+**/zotero_import_guide.md
