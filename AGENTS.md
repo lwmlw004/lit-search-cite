@@ -116,9 +116,9 @@ python scripts/web-capture.py --text copied-references.txt --limit 50 --dedupe d
 .\scripts\web-capture.ps1 -Url "https://example.com/article" -Out "references/captured" -Pdf legal
 ```
 
-Each run writes `captured.json`, `captured.csv`, `captured.bib`, `captured.ris`, `captured.md`, `dois.txt`, `failed.txt`, and `run_report.md` under `references/captured/YYYYMMDD_HHMMSS/`.
+Each run writes `captured.json`, `captured.csv`, `captured.bib`, `captured.ris`, `captured.md`, `dois.txt`, `failed.txt`, `run_report.md`, `pdf_manifest.json`, `onefind_index.md`, and `zotero_import_guide.md` under `references/captured/YYYYMMDD_HHMMSS/`.
 
-`--pdf legal` only attempts legal open-access routes: publisher-provided open PDF links, Unpaywall, OpenAlex OA locations, EuropePMC/PubMed Central, and arXiv. Do not add paywall bypasses or unauthorized mirrors to this workflow. Optional scansci-pdf handoff uses `dois.txt`; OneFind/Zotero/EndNote indexing is documented in `docs/`.
+`--pdf legal` only attempts legal open-access routes: `citation_pdf_url`, JSON-LD PDF URLs, arXiv, EuropePMC/PubMed Central, OpenAlex OA locations, Unpaywall, and publisher-provided open PDF links. Do not add paywall bypasses or unauthorized mirrors to this workflow. Optional scansci-pdf handoff uses `dois.txt`; OneFind/Zotero/EndNote indexing is documented in `docs/`.
 
 ---
 

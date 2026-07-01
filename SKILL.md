@@ -258,9 +258,11 @@ Extraction order: HTML meta tags (`citation_*`, Dublin Core, PRISM, OpenGraph), 
 
 Enrichment priority: CrossRef DOI → OpenAlex DOI → PubMed → arXiv → title fallback through CrossRef/OpenAlex. Do not let one failed record stop the batch.
 
-Outputs are written to `references/captured/YYYYMMDD_HHMMSS/`: `captured.json`, `captured.csv`, `captured.bib`, `captured.ris`, `captured.md`, `dois.txt`, `failed.txt`, and `run_report.md`.
+Outputs are written to `references/captured/YYYYMMDD_HHMMSS/`: `captured.json`, `captured.csv`, `captured.bib`, `captured.ris`, `captured.md`, `dois.txt`, `failed.txt`, `run_report.md`, `pdf_manifest.json`, `onefind_index.md`, and `zotero_import_guide.md`.
 
-For this mode, `--pdf legal` may only use publisher-provided open PDF links, Unpaywall, OpenAlex OA locations, EuropePMC/PubMed Central, and arXiv. Do not embed Sci-Hub, LibGen, Anna's Archive, or paywall-circumvention logic in `web-capture.py`. If the user has scansci-pdf configured, treat it as an optional external follow-up using `dois.txt`; see `docs/scansci-pdf-integration.md`.
+For this mode, `--pdf legal` may only use publisher-provided open PDF links, JSON-LD PDF links, arXiv, EuropePMC/PubMed Central, OpenAlex OA locations, and Unpaywall. Do not embed Sci-Hub, LibGen, Anna's Archive, or paywall-circumvention logic in `web-capture.py`. If the user has scansci-pdf configured, treat it as an optional external follow-up using `dois.txt`; see `docs/scansci-pdf-integration.md`.
+
+For local knowledge-base handoff, use `onefind_index.md` with OneFind or local AI folder indexing, `captured.bib` / `captured.ris` for Zotero or EndNote, and the `pdfs/` folder for manually attaching legal OA PDFs.
 
 For browser-side collection patterns and the bookmarklet, read `docs/browser-capture.md`. For local knowledge-base indexing after capture, read `docs/onefind-workflow.md`.
 

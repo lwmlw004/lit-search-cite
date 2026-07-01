@@ -87,7 +87,7 @@ npx lit-search-cite@latest --target ~/my-skills      # 自定义路径
 
 ## 从网页自动抓取文献
 
-`web-literature-capture` 由 `scripts/web-capture.py` 提供，优先读取 HTML meta、JSON-LD、PubMed/arXiv 页面线索和 DOI 正则；有 DOI 时按 CrossRef → OpenAlex 补全，没有 DOI 时用标题尝试 CrossRef/OpenAlex fallback。每次运行写入 `references/captured/YYYYMMDD_HHMMSS/`，包含 `captured.json`、`captured.csv`、`captured.bib`、`captured.ris`、`captured.md`、`dois.txt`、`failed.txt`、`run_report.md`。
+`web-literature-capture` 由 `scripts/web-capture.py` 提供，优先读取 HTML meta、JSON-LD、PubMed/arXiv 页面线索和 DOI 正则；有 DOI 时按 CrossRef → OpenAlex 补全，没有 DOI 时用标题尝试 CrossRef/OpenAlex fallback。每次运行写入 `references/captured/YYYYMMDD_HHMMSS/`，包含 `captured.json`、`captured.csv`、`captured.bib`、`captured.ris`、`captured.md`、`dois.txt`、`failed.txt`、`run_report.md`、`pdf_manifest.json`、`onefind_index.md`、`zotero_import_guide.md`。
 
 ```bash
 # 1. 单篇出版社页面
@@ -126,9 +126,26 @@ powershell -ExecutionPolicy Bypass -File .\scripts\web-capture.ps1 -Url "https:/
 | `not_requested` | 未传入 `--pdf legal`，没有尝试 PDF 获取 |
 | `not_found_or_paywalled` | 已尝试合法开放来源，但没有找到开放 PDF，或可能在付费墙后 |
 | `found_url_download_failed` | 找到了候选 PDF URL，但下载失败、返回非 PDF 或被网络/站点拦截 |
+| `skipped_non_pdf` | 候选 URL 返回 HTML 或其他非 PDF 内容，未保存为 PDF |
+| `skipped_unsafe_url` | 候选 URL 使用不安全协议或命中非授权来源，已跳过 |
 | `downloaded` | 已成功保存合法开放 PDF 到本次输出目录 |
 
 开放 PDF 获取仅在 `--pdf legal` 时启用，来源限制为出版社明确给出的开放 PDF、Unpaywall、OpenAlex OA location、EuropePMC/PubMed Central 和 arXiv；不会在 `web-capture.py` 中内置 Sci-Hub、LibGen、Anna's Archive 或绕过付费墙逻辑。OneFind 工作流见 `docs/onefind-workflow.md`，scansci-pdf 可选衔接见 `docs/scansci-pdf-integration.md`，浏览器辅助见 `docs/browser-capture.md`。
+
+## 合法开放 PDF 获取与本地知识库索引
+
+```bash
+python scripts/web-capture.py --url "https://doi.org/10.xxxx/example" --out references/captured --pdf legal
+```
+
+`--pdf legal` 会按合法开放来源尝试 PDF：HTML `citation_pdf_url`、JSON-LD 中的 `contentUrl` / `encoding` / `associatedMedia`、arXiv PDF、PubMed Central / EuropePMC、OpenAlex OA location、Unpaywall，以及出版社页面明确公开的 PDF 链接。每个请求都有 timeout；单篇失败不会中断整批；返回 HTML 错误页或非 PDF 内容不会保存为 PDF。
+
+新增本地知识库交接文件：
+
+- `pdfs/`：成功下载的合法开放 PDF。
+- `pdf_manifest.json`：每篇文献的 PDF 状态、来源、URL、本地路径、license、OA status。
+- `onefind_index.md`：面向 OneFind / 本地 AI 知识库的轻量 Markdown 索引，即使没有 PDF 也保留条目。
+- `zotero_import_guide.md`：说明如何把 `captured.bib`、`captured.ris` 和 `pdfs/` 手动导入 Zotero / EndNote。
 
 ## 支持的文献源
 

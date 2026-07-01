@@ -1,0 +1,24 @@
+{
+  "id": "https://openalex.org/W123",
+  "doi": "https://doi.org/10.2222/openalex.oa",
+  "title": "OpenAlex OA fixture",
+  "publication_year": 2024,
+  "cited_by_count": 12,
+  "authorships": [
+    {"author": {"display_name": "Irene Curie"}}
+  ],
+  "primary_location": {
+    "pdf_url": "https://example.org/openalex-primary.pdf",
+    "license": "cc-by",
+    "source": {"display_name": "OpenAlex Fixture Journal"}
+  },
+  "best_oa_location": {
+    "pdf_url": "https://example.org/openalex-best.pdf",
+    "license": "cc-by"
+  },
+  "open_access": {
+    "is_oa": true,
+    "oa_status": "gold",
+    "oa_url": "https://example.org/openalex-best.pdf"
+  }
+}

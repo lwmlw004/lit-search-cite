@@ -4,8 +4,8 @@
 
 ## Recommended Boundary
 
-- `lit-search-cite` extracts records and writes `captured.json`, `captured.md`, `captured.bib`, `captured.ris`, `captured.csv`, and `dois.txt`.
-- `scripts/web-capture.py --pdf legal` only tries legal open-access routes: publisher-provided PDF links, Unpaywall, OpenAlex OA locations, EuropePMC, PubMed Central, and arXiv.
+- `lit-search-cite` extracts records and writes `captured.json`, `captured.md`, `captured.bib`, `captured.ris`, `captured.csv`, `dois.txt`, `pdf_manifest.json`, `onefind_index.md`, and `zotero_import_guide.md`.
+- `scripts/web-capture.py --pdf legal` only tries legal open-access routes: `citation_pdf_url`, JSON-LD PDF URLs, arXiv, EuropePMC/PubMed Central, OpenAlex OA locations, Unpaywall, and publisher-provided PDF links.
 - `scansci-pdf` can be used separately when the user has voluntarily configured that MCP server.
 - Do not store school accounts, WebVPN passwords, CARSI credentials, EZProxy passwords, or institutional authentication secrets inside this project.
 
@@ -23,7 +23,7 @@ Each run creates:
 references/captured/YYYYMMDD_HHMMSS/dois.txt
 ```
 
-If scansci-pdf is configured in the user's AI environment, pass the DOI list to that external tool in the chat or through the MCP workflow the user already trusts. Keep this repository focused on extraction, enrichment, citation export, and legal OA lookup.
+If scansci-pdf is configured in the user's AI environment, pass the DOI list to that external tool in the chat or through the MCP workflow the user already trusts. Keep this repository focused on extraction, enrichment, citation export, legal OA lookup, and local handoff files. Use `pdf_manifest.json` to see which items already have legal OA PDFs before doing any optional external follow-up.
 
 ## What This Project Does Not Do
 

@@ -80,6 +80,10 @@ The no-network fixtures in `evals/web-capture/` cover:
 - `sample_arxiv.html`: arXiv-like abstract page
 - `sample_reference_list.txt`: multi-DOI reference list
 - `sample_reference_noise.txt`: noisy DOI text with Chinese punctuation, parentheses, duplicates, and line breaks
+- `sample_open_pdf_meta.html`: `citation_pdf_url` and publisher PDF link extraction
+- `sample_arxiv_pdf.html`: JSON-LD PDF `contentUrl` extraction
+- `sample_openalex_oa.json`: OpenAlex OA PDF metadata fixture
+- `sample_unpaywall.json`: Unpaywall OA location fixture
 
 Run them with:
 
@@ -96,4 +100,8 @@ Each capture run writes `run_report.md`. Common PDF statuses are:
 | `not_requested` | `--pdf legal` was not used, so no PDF lookup was attempted |
 | `not_found_or_paywalled` | Legal open-access lookup ran but no open PDF was found, or the PDF appears to be behind a paywall |
 | `found_url_download_failed` | A candidate PDF URL was found, but the download failed, returned non-PDF content, or was blocked |
+| `skipped_non_pdf` | The candidate URL returned HTML or other non-PDF content and was not saved |
+| `skipped_unsafe_url` | The candidate URL used an unsupported scheme or a blocked unauthorized source |
 | `downloaded` | A legal open-access PDF was saved successfully in the run directory |
+
+When `--pdf legal` succeeds, PDFs are saved under `pdfs/`. The same run also writes `pdf_manifest.json`, `onefind_index.md`, and `zotero_import_guide.md` for local indexing and reference-manager handoff.

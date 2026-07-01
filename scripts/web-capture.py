@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import hashlib
 import html
 from html.parser import HTMLParser
 import json
@@ -57,6 +58,10 @@ SCHEMA_FIELDS = [
     "doi",
     "url",
     "pdf_url",
+    "pdf_path",
+    "pdf_error",
+    "oa_status",
+    "license",
     "source_page",
     "metadata_source",
     "abstract",
@@ -161,6 +166,55 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
+def looks_like_pdf_url(url: str) -> bool:
+    if not url:
+        return False
+    parsed = urllib.parse.urlparse(html.unescape(url).strip())
+    path = parsed.path.lower()
+    query = parsed.query.lower()
+    return path.endswith(".pdf") or "/pdf" in path or "pdf" in query
+
+
+def is_safe_pdf_url(url: str) -> tuple[bool, str]:
+    parsed = urllib.parse.urlparse(html.unescape(url or "").strip())
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return False, "unsupported URL scheme"
+    host = parsed.netloc.lower()
+    blocked = ("sci-hub", "libgen", "anna", "annas-archive", "z-lib", "zlibrary")
+    if any(token in host for token in blocked):
+        return False, "blocked non-authorized source"
+    return True, ""
+
+
+def relative_to_run(path: Path, run_dir: Path) -> str:
+    try:
+        return path.relative_to(run_dir).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def short_journal(value: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", value or "")
+    if not words:
+        return "journal"
+    return "".join(word[:8] for word in words[:3])
+
+
+def pdf_filename(article: dict[str, Any]) -> str:
+    first_author = "paper"
+    if article.get("authors"):
+        first_author = re.sub(r"[^A-Za-z0-9]+", "", article["authors"][0].split()[-1]) or "paper"
+    year = re.sub(r"[^0-9]+", "", article.get("year") or "")[:4] or "noyear"
+    journal = short_journal(article.get("journal") or "")
+    doi_or_title = article.get("doi") or article.get("title") or article.get("arxiv_id") or "paper"
+    if not (article.get("authors") and article.get("year") and article.get("journal")):
+        digest = hashlib.sha1(doi_or_title.encode("utf-8", errors="ignore")).hexdigest()[:10]
+        doi_safe = safe_filename(doi_or_title, digest)
+        return f"{doi_safe}_{digest}.pdf"
+    doi_safe = safe_filename(doi_or_title, "doi")
+    return safe_filename(f"{first_author}_{year}_{journal}_{doi_safe}", "paper")[:180] + ".pdf"
+
+
 def article_template(**overrides: Any) -> dict[str, Any]:
     article: dict[str, Any] = {
         "title": "",
@@ -173,6 +227,10 @@ def article_template(**overrides: Any) -> dict[str, Any]:
         "doi": "",
         "url": "",
         "pdf_url": "",
+        "pdf_path": "",
+        "pdf_error": "",
+        "oa_status": "",
+        "license": "",
         "source_page": "",
         "metadata_source": "",
         "abstract": "",
@@ -185,6 +243,7 @@ def article_template(**overrides: Any) -> dict[str, Any]:
         "pdf_status": "not_requested",
         "pdf_source": "",
         "pdf_file": "",
+        "pdf_candidates": [],
         "notes": [],
     }
     article.update(overrides)
@@ -312,11 +371,32 @@ def meta_article(parser: LiteratureHTMLParser, source_page: str) -> dict[str, An
         doi=doi,
         url=url,
         pdf_url=pdf_url,
+        pdf_candidates=[
+            {"url": pdf_url, "source": "citation_pdf_url", "license": "", "oa_status": ""}
+        ] if pdf_url else [],
         source_page=source_page,
         metadata_source="html-meta",
         confidence=confidence,
         pmid=pmid,
     )
+
+
+def publisher_pdf_link_candidates(parser: LiteratureHTMLParser, source_page: str) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    for link in parser.links:
+        href = link.get("href", "")
+        if not href or not looks_like_pdf_url(href):
+            continue
+        url = urllib.parse.urljoin(source_page, href)
+        candidates.append({"url": url, "source": "publisher PDF link", "license": "", "oa_status": ""})
+    seen = set()
+    deduped = []
+    for item in candidates:
+        if item["url"] in seen:
+            continue
+        seen.add(item["url"])
+        deduped.append(item)
+    return deduped
 
 
 def walk_jsonld(value: Any) -> list[dict[str, Any]]:
@@ -358,6 +438,23 @@ def doi_from_identifier(value: Any) -> str:
     return ""
 
 
+def jsonld_pdf_urls(value: Any) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            urls.extend(jsonld_pdf_urls(item))
+    elif isinstance(value, dict):
+        for key in ("contentUrl", "url", "@id"):
+            raw = value.get(key)
+            if isinstance(raw, str) and looks_like_pdf_url(raw):
+                urls.append(raw)
+        for key in ("encoding", "associatedMedia", "hasPart", "mainEntity"):
+            urls.extend(jsonld_pdf_urls(value.get(key)))
+    elif isinstance(value, str) and looks_like_pdf_url(value):
+        urls.append(value)
+    return list(dict.fromkeys(urls))
+
+
 def jsonld_articles(parser: LiteratureHTMLParser, source_page: str) -> list[dict[str, Any]]:
     articles: list[dict[str, Any]] = []
     for payload in parser.jsonld:
@@ -390,6 +487,7 @@ def jsonld_articles(parser: LiteratureHTMLParser, source_page: str) -> list[dict
             title = first(node.get("headline")) or first(node.get("name"))
             if not any([title, doi, node.get("author")]):
                 continue
+            pdf_urls = jsonld_pdf_urls(node)
             articles.append(
                 article_template(
                     title=title,
@@ -398,7 +496,11 @@ def jsonld_articles(parser: LiteratureHTMLParser, source_page: str) -> list[dict
                     journal=journal,
                     doi=doi,
                     url=first(node.get("url") or node.get("@id")) or source_page,
-                    pdf_url=first(node.get("encoding") if isinstance(node.get("encoding"), str) else ""),
+                    pdf_url=first(pdf_urls),
+                    pdf_candidates=[
+                        {"url": url, "source": "JSON-LD PDF", "license": "", "oa_status": ""}
+                        for url in pdf_urls
+                    ],
                     source_page=source_page,
                     metadata_source="json-ld",
                     abstract=clean_text(first(node.get("description") or node.get("abstract"))),
@@ -436,6 +538,22 @@ def build_initial_candidates(content: str, source_page: str, is_html: bool) -> l
         if meta:
             candidates.append(meta)
         candidates.extend(jsonld_articles(parser, source_page))
+        publisher_pdfs = publisher_pdf_link_candidates(parser, source_page)
+        if publisher_pdfs:
+            if candidates:
+                candidates[0]["pdf_candidates"] = list(candidates[0].get("pdf_candidates") or []) + publisher_pdfs
+                if not candidates[0].get("pdf_url"):
+                    candidates[0]["pdf_url"] = publisher_pdfs[0]["url"]
+            else:
+                candidates.append(
+                    article_template(
+                        pdf_url=publisher_pdfs[0]["url"],
+                        pdf_candidates=publisher_pdfs,
+                        source_page=source_page,
+                        metadata_source="publisher-pdf-link",
+                        confidence=0.3,
+                    )
+                )
 
     pmid = extract_pubmed_id(content, source_page)
     if pmid and not any(c.get("pmid") == pmid for c in candidates):
@@ -600,9 +718,11 @@ def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
     biblio = work.get("biblio") or {}
     open_access = work.get("open_access") or {}
     best_oa = work.get("best_oa_location") or {}
-    pdf_url = best_oa.get("pdf_url") or ""
+    pdf_url = best_oa.get("pdf_url") or primary.get("pdf_url") or ""
     if not pdf_url and str(open_access.get("oa_url", "")).lower().endswith(".pdf"):
         pdf_url = open_access.get("oa_url", "")
+    license_value = best_oa.get("license") or primary.get("license") or ""
+    oa_status = open_access.get("oa_status") or ("oa" if open_access.get("is_oa") else "")
     return article_template(
         title=work.get("title", ""),
         authors=authors,
@@ -615,9 +735,14 @@ def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
         doi=work.get("doi", ""),
         url=work.get("doi") or work.get("id", ""),
         pdf_url=pdf_url,
+        pdf_candidates=[
+            {"url": pdf_url, "source": "OpenAlex OA location", "license": license_value, "oa_status": oa_status}
+        ] if pdf_url else [],
         metadata_source="openalex",
         abstract=invert_openalex_abstract(work.get("abstract_inverted_index")),
         citation_count=work.get("cited_by_count"),
+        oa_status=oa_status,
+        license=license_value,
         confidence=0.9 if work.get("doi") else 0.68,
     )
 
@@ -780,6 +905,20 @@ def merge_article(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[st
             merged[key] = list(dict.fromkeys(as_list(merged.get(key)) + as_list(value)))
         elif key == "notes":
             merged[key] = list(dict.fromkeys(as_list(merged.get(key)) + as_list(value)))
+        elif key == "pdf_candidates":
+            existing = merged.get(key) if isinstance(merged.get(key), list) else []
+            incoming = value if isinstance(value, list) else []
+            seen = set()
+            candidates = []
+            for item in existing + incoming:
+                if not isinstance(item, dict):
+                    continue
+                url = item.get("url", "")
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                candidates.append(item)
+            merged[key] = candidates
         elif key == "confidence":
             merged[key] = max(float(merged.get(key) or 0), float(value or 0))
         elif key == "metadata_source":
@@ -952,82 +1091,147 @@ def apply_online_journal_rank(articles: list[dict[str, Any]], verbose: bool = Fa
             article["journal_rank"] = rank
 
 
-def unpaywall_pdf(doi: str, email: str, verbose: bool = False) -> tuple[str, str]:
+def unpaywall_pdf_candidates(doi: str, email: str, verbose: bool = False) -> list[dict[str, str]]:
     if not doi or not email:
-        return "", ""
+        return []
     url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={urllib.parse.quote(email)}"
     data = request_json(url, timeout=15, verbose=verbose)
-    loc = (data or {}).get("best_oa_location") or {}
-    pdf = loc.get("url_for_pdf") or ""
-    if pdf:
-        return pdf, f"Unpaywall ({(data or {}).get('oa_status', 'unknown')})"
-    return "", ""
+    candidates: list[dict[str, str]] = []
+    if not isinstance(data, dict):
+        return candidates
+    oa_status = data.get("oa_status", "")
+    for loc in [data.get("best_oa_location") or {}] + (data.get("oa_locations") or []):
+        pdf = loc.get("url_for_pdf") or ""
+        if pdf:
+            candidates.append({
+                "url": pdf,
+                "source": "Unpaywall",
+                "license": loc.get("license") or "",
+                "oa_status": oa_status,
+            })
+    return dedupe_pdf_candidates(candidates)
 
 
-def openalex_pdf(doi: str, verbose: bool = False) -> tuple[str, str]:
+def openalex_pdf_candidates(doi: str, verbose: bool = False) -> list[dict[str, str]]:
     work = query_openalex_by_doi(doi, verbose=verbose)
     if work and work.get("pdf_url"):
-        return work["pdf_url"], "OpenAlex OA location"
-    return "", ""
+        return [{
+            "url": work["pdf_url"],
+            "source": "OpenAlex OA location",
+            "license": work.get("license", ""),
+            "oa_status": work.get("oa_status", ""),
+        }]
+    return []
 
 
-def europepmc_pdf(doi: str, verbose: bool = False) -> tuple[str, str]:
+def europepmc_pdf_candidates(doi: str, verbose: bool = False) -> list[dict[str, str]]:
     if not doi:
-        return "", ""
+        return []
     query = urllib.parse.quote(f"DOI:{doi}")
     url = (
         "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
         f"?query={query}&resultType=core&format=json&pageSize=3"
     )
     data = request_json(url, timeout=15, verbose=verbose)
+    candidates: list[dict[str, str]] = []
     for item in (((data or {}).get("resultList") or {}).get("result") or []):
         if item.get("isOpenAccess") == "Y" and item.get("pmcid"):
-            return f"https://europepmc.org/articles/{item['pmcid']}/pdf", f"EuropePMC {item['pmcid']}"
-    return "", ""
+            candidates.append({
+                "url": f"https://europepmc.org/articles/{item['pmcid']}/pdf",
+                "source": f"EuropePMC {item['pmcid']}",
+                "license": item.get("license") or "",
+                "oa_status": "oa",
+            })
+    return dedupe_pdf_candidates(candidates)
 
 
-def legal_pdf_candidates(article: dict[str, Any], unpaywall_email: str, verbose: bool = False) -> list[tuple[str, str]]:
-    candidates: list[tuple[str, str]] = []
-    if article.get("pdf_url"):
-        source = "arXiv" if article.get("arxiv_id") else "publisher-provided PDF link"
-        candidates.append((article["pdf_url"], source))
-    if article.get("arxiv_id"):
-        candidates.append((f"https://arxiv.org/pdf/{article['arxiv_id']}", "arXiv"))
-    doi = article.get("doi", "")
-    if doi:
-        for getter in (
-            lambda: unpaywall_pdf(doi, unpaywall_email, verbose=verbose),
-            lambda: openalex_pdf(doi, verbose=verbose),
-            lambda: europepmc_pdf(doi, verbose=verbose),
-        ):
-            url, source = getter()
-            if url:
-                candidates.append((url, source))
+def dedupe_pdf_candidates(candidates: list[dict[str, str]]) -> list[dict[str, str]]:
     deduped = []
     seen = set()
-    for url, source in candidates:
-        if url and url not in seen:
-            seen.add(url)
-            deduped.append((url, source))
+    for item in candidates:
+        url = item.get("url", "")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        deduped.append(item)
     return deduped
 
 
-def download_pdf(url: str, article: dict[str, Any], output_dir: Path, verbose: bool = False) -> str:
+def legal_pdf_candidates(article: dict[str, Any], unpaywall_email: str, verbose: bool = False) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    candidates.extend(article.get("pdf_candidates") or [])
+    if article.get("pdf_url"):
+        source = "arXiv" if article.get("arxiv_id") else "publisher-provided PDF link"
+        candidates.append({
+            "url": article["pdf_url"],
+            "source": source,
+            "license": article.get("license", ""),
+            "oa_status": article.get("oa_status", ""),
+        })
+    if article.get("arxiv_id"):
+        candidates.append({
+            "url": f"https://arxiv.org/pdf/{article['arxiv_id']}",
+            "source": "arXiv",
+            "license": article.get("license", ""),
+            "oa_status": article.get("oa_status", "green"),
+        })
+    doi = article.get("doi", "")
+    if doi:
+        candidates.extend(europepmc_pdf_candidates(doi, verbose=verbose))
+        candidates.extend(openalex_pdf_candidates(doi, verbose=verbose))
+        candidates.extend(unpaywall_pdf_candidates(doi, unpaywall_email, verbose=verbose))
+    return dedupe_pdf_candidates(candidates)
+
+
+def pdf_candidate_priority(item: dict[str, str]) -> int:
+    source = (item.get("source") or "").lower()
+    if "citation_pdf_url" in source:
+        return 10
+    if "json-ld" in source:
+        return 20
+    if "arxiv" in source:
+        return 30
+    if "europepmc" in source or "pubmed central" in source:
+        return 40
+    if "openalex" in source:
+        return 50
+    if "unpaywall" in source:
+        return 60
+    if "publisher" in source:
+        return 70
+    return 90
+
+
+def download_pdf(
+    candidate: dict[str, str],
+    article: dict[str, Any],
+    output_dir: Path,
+    run_dir: Path,
+    verbose: bool = False,
+) -> dict[str, str]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = safe_filename(article.get("doi") or article.get("title") or article.get("arxiv_id"), "paper")
-    path = output_dir / f"{stem}.pdf"
+    url = candidate.get("url", "")
+    is_safe, reason = is_safe_pdf_url(url)
+    if not is_safe:
+        return {"status": "skipped_unsafe_url", "path": "", "error": reason}
+    path = output_dir / pdf_filename(article)
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=30) as resp:
             content_type = resp.headers.get("Content-Type", "").lower()
             data = resp.read()
-        if "pdf" not in content_type and not data.startswith(b"%PDF"):
-            raise ValueError(f"URL did not return a PDF content type ({content_type or 'unknown'})")
+        is_pdf = "application/pdf" in content_type or data.startswith(b"%PDF")
+        if not is_pdf and not (looks_like_pdf_url(url) and data.startswith(b"%PDF")):
+            return {
+                "status": "skipped_non_pdf",
+                "path": "",
+                "error": f"URL did not return PDF content ({content_type or 'unknown'})",
+            }
         path.write_bytes(data)
-        return str(path)
+        return {"status": "downloaded", "path": relative_to_run(path, run_dir), "error": ""}
     except Exception as exc:  # noqa: BLE001
         log(f"[PDF] download failed from {url}: {exc}", verbose)
-        return ""
+        return {"status": "found_url_download_failed", "path": "", "error": str(exc)}
 
 
 def fetch_legal_pdfs(articles: list[dict[str, Any]], run_dir: Path, verbose: bool = False) -> None:
@@ -1035,18 +1239,27 @@ def fetch_legal_pdfs(articles: list[dict[str, Any]], run_dir: Path, verbose: boo
     pdf_dir = run_dir / "pdfs"
     for article in articles:
         article["pdf_status"] = "not_found_or_paywalled"
+        article["pdf_error"] = ""
         candidates = legal_pdf_candidates(article, email, verbose=verbose)
-        for url, source in candidates:
-            article["pdf_url"] = url
-            article["pdf_source"] = source
-            saved = download_pdf(url, article, pdf_dir, verbose=verbose)
-            if saved:
-                article["pdf_file"] = saved
-                article["pdf_status"] = "downloaded"
-                break
-            article["pdf_status"] = "found_url_download_failed"
+        candidates.sort(key=pdf_candidate_priority)
         if not candidates:
             article["pdf_url"] = article.get("pdf_url", "")
+            continue
+        for candidate in candidates:
+            article["pdf_url"] = candidate.get("url", "")
+            article["pdf_source"] = candidate.get("source", "")
+            if candidate.get("license"):
+                article["license"] = candidate["license"]
+            if candidate.get("oa_status"):
+                article["oa_status"] = candidate["oa_status"]
+            result = download_pdf(candidate, article, pdf_dir, run_dir, verbose=verbose)
+            article["pdf_status"] = result["status"]
+            article["pdf_error"] = result["error"]
+            if result["path"]:
+                article["pdf_path"] = result["path"]
+                article["pdf_file"] = str(run_dir / result["path"])
+            if result["status"] == "downloaded":
+                break
 
 
 def parse_formats(value: str) -> set[str]:
@@ -1144,7 +1357,7 @@ def write_ris(articles: list[dict[str, Any]], path: Path) -> None:
 
 
 def write_csv(articles: list[dict[str, Any]], path: Path) -> None:
-    extra_fields = ["pmid", "arxiv_id", "pdf_status", "pdf_source", "pdf_file", "notes"]
+    extra_fields = ["pmid", "arxiv_id", "pdf_source", "pdf_file", "pdf_candidates", "notes"]
     fields = SCHEMA_FIELDS + extra_fields
     with path.open("w", newline="", encoding="utf-8-sig") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
@@ -1169,7 +1382,12 @@ def write_markdown(articles: list[dict[str, Any]], path: Path) -> None:
         lines.append(f"- Year: {article.get('year') or ''}")
         lines.append(f"- DOI: {article.get('doi') or ''}")
         lines.append(f"- URL: {article.get('url') or article.get('source_page') or ''}")
-        lines.append(f"- PDF: {article.get('pdf_file') or article.get('pdf_url') or ''}")
+        lines.append(f"- PDF: {article.get('pdf_path') or article.get('pdf_url') or 'not found or paywalled'}")
+        lines.append(f"- PDF status: {article.get('pdf_status') or ''}")
+        lines.append(f"- PDF local path: {article.get('pdf_path') or ''}")
+        lines.append(f"- PDF source: {article.get('pdf_source') or ''}")
+        lines.append(f"- OA status: {article.get('oa_status') or ''}")
+        lines.append(f"- License: {article.get('license') or ''}")
         lines.append(f"- Metadata source: {article.get('metadata_source') or ''}")
         notes = "; ".join(article.get("notes") or [])
         if float(article.get("confidence") or 0) < 0.6:
@@ -1181,6 +1399,80 @@ def write_markdown(articles: list[dict[str, Any]], path: Path) -> None:
 
 def write_json(articles: list[dict[str, Any]], path: Path) -> None:
     path.write_text(json.dumps(articles, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def write_pdf_manifest(articles: list[dict[str, Any]], run_dir: Path) -> None:
+    items = []
+    for article in articles:
+        items.append({
+            "title": article.get("title", ""),
+            "doi": article.get("doi", ""),
+            "pdf_status": article.get("pdf_status", ""),
+            "pdf_source": article.get("pdf_source", ""),
+            "pdf_url": article.get("pdf_url", ""),
+            "pdf_path": article.get("pdf_path", ""),
+            "license": article.get("license", ""),
+            "oa_status": article.get("oa_status", ""),
+        })
+    manifest = {
+        "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "total_articles": len(articles),
+        "downloaded": sum(1 for item in items if item["pdf_status"] == "downloaded"),
+        "failed": sum(1 for item in items if item["pdf_status"] != "downloaded"),
+        "items": items,
+    }
+    (run_dir / "pdf_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def write_onefind_index(articles: list[dict[str, Any]], run_dir: Path) -> None:
+    lines = ["# OneFind Literature Index", ""]
+    for idx, article in enumerate(articles, 1):
+        lines.append(f"## Article {idx}: {article.get('title') or '(untitled)'}")
+        lines.append(f"- DOI: {article.get('doi') or ''}")
+        lines.append(f"- Year: {article.get('year') or ''}")
+        lines.append(f"- Journal: {article.get('journal') or ''}")
+        lines.append(f"- Authors: {'; '.join(article.get('authors') or [])}")
+        lines.append(f"- Local PDF: {article.get('pdf_path') or ''}")
+        lines.append(f"- Source URL: {article.get('url') or article.get('source_page') or ''}")
+        lines.append(f"- Abstract: {article.get('abstract') or ''}")
+        lines.append(f"- Keywords: {'; '.join(article.get('keywords') or [])}")
+        notes = "; ".join(article.get("notes") or [])
+        if article.get("pdf_status") and article.get("pdf_status") != "downloaded":
+            notes = (notes + "; " if notes else "") + f"PDF status: {article.get('pdf_status')}"
+        lines.append(f"- Notes: {notes}")
+        lines.append("")
+    (run_dir / "onefind_index.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_zotero_import_guide(run_dir: Path) -> None:
+    lines = [
+        "# Zotero / EndNote Import Guide",
+        "",
+        "## Import BibTeX Into Zotero",
+        "",
+        "1. Open Zotero.",
+        "2. Choose `File` -> `Import...`.",
+        "3. Select `captured.bib` from this capture run.",
+        "4. Review imported metadata and merge duplicates if Zotero detects any.",
+        "",
+        "## Import RIS Into Zotero Or EndNote",
+        "",
+        "1. Choose the import command in Zotero or EndNote.",
+        "2. Select `captured.ris`.",
+        "3. Confirm that DOI, title, journal, year, and authors look correct.",
+        "",
+        "## Add Local PDFs",
+        "",
+        "Drag files from the `pdfs/` folder into Zotero, or attach each PDF to the matching item.",
+        "If Zotero does not automatically associate a PDF, search within Zotero by DOI or title, then attach the file manually.",
+        "",
+        "## Access Boundary",
+        "",
+        "This project only attempts legal open-access PDFs. It does not bypass paywalls and does not use Sci-Hub, LibGen, Anna's Archive, or other unauthorized mirrors.",
+    ]
+    (run_dir / "zotero_import_guide.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def write_control_files(
@@ -1208,6 +1500,7 @@ def write_control_files(
         f"- Successfully enriched records: {report.get('enriched_count')}",
         f"- DOI duplicates removed: {report.get('doi_duplicates_removed')}",
         f"- PDF successful records: {report.get('pdf_success_count')}",
+        f"- PDF downloaded total: {report.get('pdf_downloaded_total')}",
         f"- Failed/flagged records: {len(failed)}",
         f"- Low-confidence records requiring manual check: {len(low_conf)}",
     ]
@@ -1219,10 +1512,37 @@ def write_control_files(
         pdf_status_counts[status] = pdf_status_counts.get(status, 0) + 1
     if pdf_status_counts:
         lines.append(f"- PDF status counts: {json.dumps(pdf_status_counts, ensure_ascii=False)}")
+    pdf_source_counts: dict[str, int] = {}
+    pdf_error_counts: dict[str, int] = {}
+    for article in articles:
+        source = article.get("pdf_source") or "none"
+        if article.get("pdf_status") == "downloaded":
+            pdf_source_counts[source] = pdf_source_counts.get(source, 0) + 1
+        error = article.get("pdf_error") or ""
+        if error:
+            pdf_error_counts[error] = pdf_error_counts.get(error, 0) + 1
+    if pdf_source_counts:
+        lines.append(f"- PDF source counts: {json.dumps(pdf_source_counts, ensure_ascii=False)}")
+    if pdf_error_counts:
+        lines.append(f"- PDF failure reason counts: {json.dumps(pdf_error_counts, ensure_ascii=False)}")
+    if any("403" in (article.get("pdf_error") or "") for article in articles):
+        lines.append("- 403 note: publisher pages may block command-line fetches; save the browser page as HTML and retry with `--html`.")
     lines.extend(["", "## Low-Confidence Records", ""])
     if low_conf:
         for article in low_conf:
             lines.append(f"- {article.get('title') or article.get('doi') or '(untitled)'}")
+    else:
+        lines.append("- None")
+    manual_check = [
+        article for article in articles
+        if float(article.get("confidence") or 0) < 0.6
+        or article.get("pdf_status") in {"found_url_download_failed", "skipped_non_pdf", "skipped_unsafe_url"}
+        or article.get("notes")
+    ]
+    lines.extend(["", "## Needs Manual Check", ""])
+    if manual_check:
+        for article in manual_check:
+            lines.append(f"- {article.get('title') or article.get('doi') or '(untitled)'} | PDF: {article.get('pdf_status')}")
     else:
         lines.append("- None")
     lines.extend(["", "## Failed or Flagged Records", ""])
@@ -1248,6 +1568,9 @@ def write_outputs(
     write_bibtex(articles, run_dir / "captured.bib")
     write_ris(articles, run_dir / "captured.ris")
     write_markdown(articles, run_dir / "captured.md")
+    write_pdf_manifest(articles, run_dir)
+    write_onefind_index(articles, run_dir)
+    write_zotero_import_guide(run_dir)
     write_control_files(articles, run_dir, report)
 
 
@@ -1341,6 +1664,7 @@ def main() -> int:
         "enriched_count": enriched_count,
         "doi_duplicates_removed": duplicates,
         "pdf_success_count": pdf_success_count,
+        "pdf_downloaded_total": pdf_success_count,
         "input_warning": input_warning,
     }
     write_outputs(deduped, run_dir, formats, report)

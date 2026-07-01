@@ -1,0 +1,14 @@
+{
+  "doi": "10.2222/unpaywall.fixture",
+  "oa_status": "green",
+  "best_oa_location": {
+    "url_for_pdf": "https://example.org/unpaywall-best.pdf",
+    "license": "cc-by"
+  },
+  "oa_locations": [
+    {
+      "url_for_pdf": "https://example.org/unpaywall-repository.pdf",
+      "license": "cc-by-nc"
+    }
+  ]
+}

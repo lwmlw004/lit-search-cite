@@ -13,7 +13,7 @@ OneFind is best treated as a local knowledge-base index. `lit-search-cite` captu
 2. Let `lit-search-cite` enrich citation metadata and journal information where possible.
 3. Save the run outputs under `references/captured/YYYYMMDD_HHMMSS/`.
 4. Import `captured.bib` or `captured.ris` into Zotero or EndNote when reference-manager records are needed.
-5. Let OneFind index `references/`, a Zotero storage folder, an EndNote library export folder, or another local folder that contains `captured.md`, `captured.json`, and legal PDF files.
+5. Let OneFind index `references/`, a Zotero storage folder, an EndNote library export folder, or another local folder that contains `onefind_index.md`, `captured.md`, `captured.json`, and legal PDF files.
 
 ## File Roles
 
@@ -22,8 +22,13 @@ OneFind is best treated as a local knowledge-base index. `lit-search-cite` captu
 - `captured.bib`: BibTeX import for Zotero, JabRef, LaTeX, and many editors.
 - `captured.ris`: RIS import for Zotero, EndNote, and Mendeley.
 - `dois.txt`: DOI handoff list for optional downstream tools.
+- `pdf_manifest.json`: PDF status, source, URL, local path, license, and OA status for each article.
+- `onefind_index.md`: compact AI-readable index for OneFind and local knowledge-base search.
+- `zotero_import_guide.md`: manual import instructions for Zotero / EndNote and local PDFs.
 - `pdfs/`: legal open-access PDFs when `--pdf legal` succeeds.
 
 ## Boundaries
 
 OneFind is not a PDF downloader and should not be treated as a web scraper. Use `web-capture.py` for capture, optional legal OA PDF lookup for downloads, then OneFind/Zotero/EndNote for local indexing and retrieval.
+
+Point OneFind at the run directory or at the parent `references/captured/` folder. `onefind_index.md` keeps every article visible even when no PDF was found, and its `Local PDF` field uses a relative `pdfs/...` path when a legal OA PDF was downloaded.

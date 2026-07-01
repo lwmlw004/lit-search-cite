@@ -12,10 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `scripts/web-capture.ps1` Windows wrapper and `scripts/test-web-capture.py` no-network test harness.
 - `evals/web-capture/` fixtures for PubMed, publisher meta tags, JSON-LD, reference lists, and arXiv pages.
 - `docs/browser-capture.md`, `docs/scansci-pdf-integration.md`, and `docs/onefind-workflow.md`.
+- Legal OA PDF handoff outputs: `pdf_manifest.json`, `onefind_index.md`, `zotero_import_guide.md`, and `pdfs/` run folders.
+- Local fixtures for open PDF meta tags, arXiv PDF JSON-LD, OpenAlex OA JSON, and Unpaywall JSON.
 
 ### Changed
 - Installer/package allowlist now includes `docs/` and `evals/` so web-capture docs and fixtures are available after install.
 - README, SKILL, and AGENTS document the new web capture workflow and legal-only `--pdf legal` boundary.
+- `--pdf legal` now records PDF status/source/error/license/OA status and rejects unsafe URLs or non-PDF responses without stopping the batch.
 
 ---
 
