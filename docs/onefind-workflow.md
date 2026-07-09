@@ -17,8 +17,8 @@ OneFind is best treated as a local knowledge-base index. `lit-search-cite` captu
 
 ## File Roles
 
-- `captured.json`: structured metadata for later automation.
-- `captured.md`: AI-readable literature summary.
+- `captured.json`: structured metadata for later automation, including abstract/keyword/concept provenance and metadata warnings.
+- `captured.md`: AI-readable literature summary with Abstract, Keywords, Concepts, enrichment sources, and warnings.
 - `captured.bib`: BibTeX import for Zotero, JabRef, LaTeX, and many editors.
 - `captured.ris`: RIS import for Zotero, EndNote, and Mendeley.
 - `dois.txt`: DOI handoff list for optional downstream tools.
@@ -32,3 +32,7 @@ OneFind is best treated as a local knowledge-base index. `lit-search-cite` captu
 OneFind is not a PDF downloader and should not be treated as a web scraper. Use `web-capture.py` for capture, optional legal OA PDF lookup for downloads, then OneFind/Zotero/EndNote for local indexing and retrieval.
 
 Point OneFind at the run directory or at the parent `references/captured/` folder. `onefind_index.md` keeps every article visible even when no PDF was found, and its `Local PDF` field uses a relative `pdfs/...` path when a legal OA PDF was downloaded.
+
+## Metadata Enrichment
+
+Publisher citation meta, CrossRef, OpenAlex, PubMed, JSON-LD, and arXiv can contribute metadata without changing the legal PDF policy. OpenAlex `abstract_inverted_index` values are rebuilt in position order, while `abstract_source`, `keywords_source`, `concepts_source`, and `metadata_warnings` keep the handoff traceable. Conservative chemistry terms are emitted only when the term or an approved spelling variant appears in source metadata, the title, or the abstract.

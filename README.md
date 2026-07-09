@@ -89,6 +89,8 @@ npx lit-search-cite@latest --target ~/my-skills      # 自定义路径
 
 `web-literature-capture` 由 `scripts/web-capture.py` 提供，优先读取 HTML meta、JSON-LD、PubMed/arXiv 页面线索和 DOI 正则；有 DOI 时按 CrossRef → OpenAlex 补全，没有 DOI 时用标题尝试 CrossRef/OpenAlex fallback。每次运行写入 `references/captured/YYYYMMDD_HHMMSS/`，包含 `captured.json`、`captured.csv`、`captured.bib`、`captured.ris`、`captured.md`、`dois.txt`、`failed.txt`、`run_report.md`、`pdf_manifest.json`、`onefind_index.md`、`zotero_import_guide.md`。
 
+Metadata enrichment 会在可用时比较 publisher meta、CrossRef、OpenAlex、PubMed、JSON-LD 和 arXiv 摘要，并在 `captured.json` 中记录 `abstract_source`、`keywords_source`、`concepts_source`、`enrichment_sources` 和 `metadata_warnings`。OpenAlex inverted abstract 按位置重建；keywords/concepts 只保留来源元数据或标题/摘要中明确出现的保守匹配，不补写缺失摘要，也不推断没有文本依据的化学术语。
+
 ```bash
 # 1. 单篇出版社页面
 python scripts/web-capture.py --url "https://example.com/article" --out references/captured --pdf legal

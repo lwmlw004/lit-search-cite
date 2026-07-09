@@ -65,7 +65,13 @@ SCHEMA_FIELDS = [
     "source_page",
     "metadata_source",
     "abstract",
+    "abstract_source",
     "keywords",
+    "keywords_source",
+    "concepts",
+    "concepts_source",
+    "enrichment_sources",
+    "metadata_warnings",
     "citation_count",
     "journal_rank",
     "confidence",
@@ -167,6 +173,166 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
+def clean_abstract_text(text: str) -> str:
+    text = html.unescape(text or "")
+    text = re.sub(r"<(script|style)\b.*?</\1>", " ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?\s*(?:[A-Za-z0-9_-]+:)?(?:sub|sup)\b[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\bC\s*\(\s*sp\s*3\s*\)", "C(sp3)", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bS\s+H\s+2\b", "SH2", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def split_metadata_terms(values: Any) -> list[str]:
+    terms: list[str] = []
+    for value in as_list(values):
+        for term in re.split(r"\s*[;,|]\s*", value):
+            cleaned = clean_text(term)
+            if cleaned:
+                terms.append(cleaned)
+    return list(dict.fromkeys(terms))
+
+
+def _dedupe_strings(values: Any) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in as_list(values):
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(value)
+    return output
+
+
+def abstract_quality_warnings(text: str, title: str = "", source: str = "") -> list[str]:
+    if not text:
+        return []
+    warnings: list[str] = []
+    label = source or "metadata"
+    if re.search(r"<[^>]+>", text):
+        warnings.append(f"{label} abstract contains residual XML/HTML markup")
+    if re.match(r"^[)\]}>;,.:]", text):
+        warnings.append(f"{label} abstract may start with an incomplete fragment")
+    elif re.match(r"^[a-z][a-z-]*\s", text):
+        warnings.append(f"{label} abstract may start with a lowercase fragment")
+    normalized_title = title_key(title)
+    normalized_abstract = title_key(text)
+    if normalized_title and normalized_abstract == normalized_title:
+        warnings.append(f"{label} abstract duplicates the title")
+    elif (
+        normalized_title
+        and normalized_abstract.startswith(normalized_title + " ")
+        and len(normalized_abstract) < len(normalized_title) * 2
+    ):
+        warnings.append(f"{label} abstract mostly repeats the title")
+    if re.search(
+        r"\b(?:privacy policy|cookie policy|subscribe to read|access through your institution|"
+        r"purchase this article|read the full article)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        warnings.append(f"{label} abstract may contain publisher SEO or access text")
+    return warnings
+
+
+def abstract_quality_score(text: str, title: str = "", source: str = "") -> float:
+    if not text:
+        return float("-inf")
+    score = min(len(text), 4000) / 20.0
+    score += min(len(re.findall(r"[.!?](?:\s|$)", text)), 12) * 12
+    warnings = abstract_quality_warnings(text, title, source)
+    score -= len(warnings) * 75
+    source_lower = source.lower()
+    if "citation_abstract" in source_lower:
+        score += 35
+    elif any(token in source_lower for token in ("crossref", "openalex", "pubmed", "arxiv")):
+        score += 25
+    elif "json-ld" in source_lower:
+        score += 15
+    if any(token in source_lower for token in ("dc.description", "og:description", "html-meta:description")):
+        score -= 35
+    return score
+
+
+def abstract_source_priority(source: str) -> int:
+    source_lower = (source or "").lower()
+    if any(token in source_lower for token in ("dc.description", "og:description", "html-meta:description")):
+        return 1
+    return 2 if source_lower else 0
+
+
+CANONICAL_TERM_RULES: tuple[tuple[str, tuple[str, ...], int], ...] = (
+    ("photoelectrocatalysis", (r"\bphotoelectrocatalysis\b",), re.IGNORECASE),
+    ("photoelectrochemical catalysis", (r"\bphotoelectrochemical catalysis\b",), re.IGNORECASE),
+    ("photoredox catalysis", (r"\bphotoredox catalysis\b",), re.IGNORECASE),
+    ("electrochemistry", (r"\belectrochemistr(?:y|ies)\b",), re.IGNORECASE),
+    (
+        "nickel catalysis",
+        (
+            r"\bnickel catalysis\b",
+            r"\bnickel[- ]cataly[sz]ed\b",
+            r"\bNi[- ]cataly[sz]ed\b",
+            r"\b(?:chiral\s+)?nickel catalyst\b",
+        ),
+        re.IGNORECASE,
+    ),
+    (
+        "redox-active ester",
+        (
+            r"(?i:\bredox[- ]active esters?\b)",
+            r"\bRAEs?\b",
+            r"(?i:\bNHPI esters?\b)",
+            r"(?i:\bN[- ]hydroxyphthalimide esters?\b)",
+        ),
+        0,
+    ),
+    ("alkyl halide", (r"\balkyl halides?\b",), re.IGNORECASE),
+    ("alkyl bromide", (r"\balkyl bromides?\b",), re.IGNORECASE),
+    ("alkyl chloride", (r"\balkyl chlorides?\b",), re.IGNORECASE),
+    ("carboxylic acid", (r"\bcarboxylic acids?\b",), re.IGNORECASE),
+    (
+        "single electron transfer",
+        (r"(?i:\bsingle[- ]electron transfer\b)", r"(?<![A-Za-z])SET(?![A-Za-z])"),
+        0,
+    ),
+    ("SH2", (r"\bSH2\b", r"\bS\s+H\s+2\b"), 0),
+    ("homolytic substitution", (r"\bhomolytic substitution\b",), re.IGNORECASE),
+    ("radical cross-coupling", (r"\bradical cross[- ]coupling\b",), re.IGNORECASE),
+    ("radical mechanism", (r"\bradical mechanisms?\b",), re.IGNORECASE),
+    ("cross-coupling", (r"\bcross[- ]coupling\b",), re.IGNORECASE),
+    (
+        "C(sp3)-C(sp3) cross-coupling",
+        (r"\bC\s*\(\s*sp\s*3\s*\)\s*[-–—]\s*C\s*\(\s*sp\s*3\s*\)\s+cross[- ]coupling\b",),
+        re.IGNORECASE,
+    ),
+    ("C(sp3) chemistry", (r"\bC\s*\(\s*sp\s*3\s*\)\s+chemistry\b",), re.IGNORECASE),
+    ("iron porphyrin", (r"\biron porphyrin\b", r"\bFe porphyrin\b"), re.IGNORECASE),
+    ("cobalt catalyst", (r"\bcobalt catalysts?\b",), re.IGNORECASE),
+    ("iridium photocatalyst", (r"\biridium photocatalysts?\b",), re.IGNORECASE),
+    ("asymmetric catalysis", (r"\basymmetric catalysis\b",), re.IGNORECASE),
+    ("enantioselective", (r"\benantioselective\b",), re.IGNORECASE),
+    ("decarboxylative coupling", (r"\bdecarboxylative coupling\b",), re.IGNORECASE),
+    (
+        "decarboxylative functionalization",
+        (r"\bdecarboxylative functionali[sz]ation\b",),
+        re.IGNORECASE,
+    ),
+)
+
+
+def extract_canonical_terms(*values: Any) -> list[str]:
+    text = "\n".join(first(value) for value in values if first(value))
+    if not text:
+        return []
+    matches: list[str] = []
+    for canonical, patterns, flags in CANONICAL_TERM_RULES:
+        if any(re.search(pattern, text, flags=flags) for pattern in patterns):
+            matches.append(canonical)
+    return matches
+
+
 def looks_like_pdf_url(url: str) -> bool:
     if not url:
         return False
@@ -235,7 +401,13 @@ def article_template(**overrides: Any) -> dict[str, Any]:
         "source_page": "",
         "metadata_source": "",
         "abstract": "",
+        "abstract_source": "",
         "keywords": [],
+        "keywords_source": [],
+        "concepts": [],
+        "concepts_source": [],
+        "enrichment_sources": [],
+        "metadata_warnings": [],
         "citation_count": None,
         "journal_rank": {},
         "confidence": 0.0,
@@ -248,14 +420,32 @@ def article_template(**overrides: Any) -> dict[str, Any]:
         "notes": [],
     }
     article.update(overrides)
-    for key in ("title", "year", "journal", "volume", "issue", "pages", "abstract", "metadata_source"):
+    for key in ("title", "year", "journal", "volume", "issue", "pages", "metadata_source"):
         if isinstance(article.get(key), str):
             article[key] = clean_text(article[key])
+    article["abstract"] = clean_abstract_text(first(article.get("abstract")))
     article["doi"] = normalize_doi(first(article.get("doi")))
     article["authors"] = as_list(article.get("authors"))
-    article["keywords"] = as_list(article.get("keywords"))
-    if not isinstance(article.get("notes"), list):
-        article["notes"] = as_list(article.get("notes"))
+    article["keywords"] = _dedupe_strings(article.get("keywords"))
+    article["keywords_source"] = _dedupe_strings(article.get("keywords_source"))
+    article["concepts"] = _dedupe_strings(article.get("concepts"))
+    article["concepts_source"] = _dedupe_strings(article.get("concepts_source"))
+    article["enrichment_sources"] = _dedupe_strings(article.get("enrichment_sources"))
+    article["metadata_warnings"] = _dedupe_strings(article.get("metadata_warnings"))
+    article["notes"] = _dedupe_strings(article.get("notes"))
+    if article["abstract"] and not article.get("abstract_source"):
+        article["abstract_source"] = article.get("metadata_source") or "input"
+    if article["keywords"] and not article["keywords_source"]:
+        article["keywords_source"] = [article.get("metadata_source") or "input"]
+    if article["concepts"] and not article["concepts_source"]:
+        article["concepts_source"] = [article.get("metadata_source") or "input"]
+    source = article.get("metadata_source") or ""
+    if source:
+        article["enrichment_sources"] = _dedupe_strings(article["enrichment_sources"] + [source])
+    article["metadata_warnings"] = _dedupe_strings(
+        article["metadata_warnings"]
+        + abstract_quality_warnings(article["abstract"], article["title"], article.get("abstract_source") or source)
+    )
     return article
 
 
@@ -353,6 +543,20 @@ def meta_article(parser: LiteratureHTMLParser, source_page: str) -> dict[str, An
         pages = f"{first_page}-{last_page}"
     elif first_page:
         pages = first_page
+    abstract = ""
+    abstract_source = ""
+    for name in ("citation_abstract", "dc.description", "description", "og:description"):
+        if values.get(name):
+            abstract = values[name][0]
+            abstract_source = f"html-meta:{name}"
+            break
+    keywords: list[str] = []
+    keyword_sources: list[str] = []
+    for name in ("citation_keywords", "article:tag", "keywords"):
+        source_terms = split_metadata_terms(values.get(name, []))
+        if source_terms:
+            keywords.extend(source_terms)
+            keyword_sources.append(f"html-meta:{name}")
     url = get("citation_abstract_html_url", "citation_fulltext_html_url", "og:url") or source_page
     pdf_url = get("citation_pdf_url")
     pmid = get("citation_pmid")
@@ -377,6 +581,11 @@ def meta_article(parser: LiteratureHTMLParser, source_page: str) -> dict[str, An
         ] if pdf_url else [],
         source_page=source_page,
         metadata_source="html-meta",
+        abstract=abstract,
+        abstract_source=abstract_source,
+        keywords=keywords,
+        keywords_source=keyword_sources,
+        enrichment_sources=["html-meta"],
         confidence=confidence,
         pmid=pmid,
     )
@@ -504,8 +713,11 @@ def jsonld_articles(parser: LiteratureHTMLParser, source_page: str) -> list[dict
                     ],
                     source_page=source_page,
                     metadata_source="json-ld",
-                    abstract=clean_text(first(node.get("description") or node.get("abstract"))),
-                    keywords=as_list(node.get("keywords")),
+                    abstract=first(node.get("description") or node.get("abstract")),
+                    abstract_source="json-ld",
+                    keywords=split_metadata_terms(node.get("keywords")),
+                    keywords_source=["json-ld"] if node.get("keywords") else [],
+                    enrichment_sources=["json-ld"],
                     confidence=0.82 if doi else 0.68,
                 )
             )
@@ -531,14 +743,26 @@ def extract_arxiv_id(text: str, source_page: str) -> str:
 
 def build_initial_candidates(content: str, source_page: str, is_html: bool) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
+    metadata_warnings: list[str] = []
     text = clean_text(content) if is_html else html.unescape(content or "")
-    parser = parse_html(content) if is_html else None
+    parser = None
+    if is_html:
+        try:
+            parser = parse_html(content)
+        except Exception as exc:  # noqa: BLE001
+            metadata_warnings.append(f"Publisher HTML parsing failed: {exc}")
 
     if parser:
-        meta = meta_article(parser, source_page)
-        if meta:
-            candidates.append(meta)
-        candidates.extend(jsonld_articles(parser, source_page))
+        try:
+            meta = meta_article(parser, source_page)
+            if meta:
+                candidates.append(meta)
+        except Exception as exc:  # noqa: BLE001
+            metadata_warnings.append(f"Publisher meta parsing failed: {exc}")
+        try:
+            candidates.extend(jsonld_articles(parser, source_page))
+        except Exception as exc:  # noqa: BLE001
+            metadata_warnings.append(f"Publisher JSON-LD parsing failed: {exc}")
         publisher_pdfs = publisher_pdf_link_candidates(parser, source_page)
         if publisher_pdfs:
             if candidates:
@@ -555,6 +779,20 @@ def build_initial_candidates(content: str, source_page: str, is_html: bool) -> l
                         confidence=0.3,
                     )
                 )
+    if metadata_warnings:
+        if candidates:
+            candidates[0]["metadata_warnings"] = _dedupe_strings(
+                list(candidates[0].get("metadata_warnings") or []) + metadata_warnings
+            )
+        else:
+            candidates.append(
+                article_template(
+                    source_page=source_page,
+                    metadata_source="html-meta",
+                    metadata_warnings=metadata_warnings,
+                    confidence=0.1,
+                )
+            )
 
     pmid = extract_pubmed_id(content, source_page)
     if pmid and not any(c.get("pmid") == pmid for c in candidates):
@@ -673,8 +911,11 @@ def crossref_to_article(item: dict[str, Any]) -> dict[str, Any]:
         doi=item.get("DOI", ""),
         url=item.get("URL", ""),
         metadata_source="crossref",
-        abstract=clean_text(first(item.get("abstract"))),
-        keywords=as_list(item.get("subject")),
+        abstract=first(item.get("abstract")),
+        abstract_source="crossref",
+        keywords=split_metadata_terms(item.get("subject")),
+        keywords_source=["crossref:subject"] if item.get("subject") else [],
+        enrichment_sources=["crossref"],
         citation_count=item.get("is-referenced-by-count"),
         confidence=0.95 if item.get("DOI") else 0.7,
     )
@@ -708,6 +949,19 @@ def query_crossref_by_title(title: str, verbose: bool = False) -> dict[str, Any]
     return None
 
 
+def openalex_concept_names(work: dict[str, Any]) -> list[str]:
+    concepts: list[str] = []
+    for key in ("concepts", "topics", "keywords"):
+        for item in work.get(key) or []:
+            if isinstance(item, dict):
+                name = first(item.get("display_name") or item.get("name") or item.get("keyword"))
+            else:
+                name = first(item)
+            if name:
+                concepts.append(clean_text(name))
+    return _dedupe_strings(concepts)
+
+
 def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
     authors = []
     for item in work.get("authorships") or []:
@@ -724,6 +978,9 @@ def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
         pdf_url = open_access.get("oa_url", "")
     license_value = best_oa.get("license") or primary.get("license") or ""
     oa_status = open_access.get("oa_status") or ("oa" if open_access.get("is_oa") else "")
+    metadata_warnings: list[str] = []
+    abstract = invert_openalex_abstract(work.get("abstract_inverted_index"), metadata_warnings)
+    concepts = openalex_concept_names(work)
     return article_template(
         title=work.get("title", ""),
         authors=authors,
@@ -740,7 +997,12 @@ def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
             {"url": pdf_url, "source": "OpenAlex OA location", "license": license_value, "oa_status": oa_status}
         ] if pdf_url else [],
         metadata_source="openalex",
-        abstract=invert_openalex_abstract(work.get("abstract_inverted_index")),
+        abstract=abstract,
+        abstract_source="openalex",
+        concepts=concepts,
+        concepts_source=["openalex"] if concepts else [],
+        enrichment_sources=["openalex"],
+        metadata_warnings=metadata_warnings,
         citation_count=work.get("cited_by_count"),
         oa_status=oa_status,
         license=license_value,
@@ -748,14 +1010,36 @@ def openalex_to_article(work: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def invert_openalex_abstract(index: Any) -> str:
+def invert_openalex_abstract(index: Any, warnings: list[str] | None = None) -> str:
+    warning_list = warnings if warnings is not None else []
+    if index in (None, {}):
+        return ""
     if not isinstance(index, dict):
+        warning_list.append("OpenAlex abstract_inverted_index is not an object")
         return ""
     positions: dict[int, str] = {}
     for word, indexes in index.items():
-        for idx in indexes:
-            positions[int(idx)] = word
-    return " ".join(positions[i] for i in sorted(positions))
+        if not isinstance(word, str) or not word.strip():
+            warning_list.append("OpenAlex abstract contains an invalid word entry")
+            continue
+        if not isinstance(indexes, list):
+            warning_list.append(f"OpenAlex positions for {word!r} are not a list")
+            continue
+        for raw_idx in indexes:
+            try:
+                if isinstance(raw_idx, bool):
+                    raise ValueError
+                idx = int(raw_idx)
+                if idx < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                warning_list.append(f"OpenAlex abstract has an invalid position for {word!r}")
+                continue
+            if idx in positions:
+                warning_list.append(f"OpenAlex abstract has duplicate position {idx}")
+                continue
+            positions[idx] = word
+    return clean_abstract_text(" ".join(positions[i] for i in sorted(positions)))
 
 
 def query_openalex_by_doi(doi: str, verbose: bool = False) -> dict[str, Any] | None:
@@ -779,7 +1063,7 @@ def query_openalex_by_title(title: str, verbose: bool = False) -> dict[str, Any]
         "https://api.openalex.org/works"
         f"?search={query}&per-page=1&sort=cited_by_count:desc"
         "&select=id,doi,title,publication_year,cited_by_count,authorships,primary_location,"
-        "open_access,best_oa_location,biblio,abstract_inverted_index"
+        "open_access,best_oa_location,biblio,abstract_inverted_index,concepts,topics,keywords"
         "&mailto=lit-search-cite@opencode.ai"
     )
     data = request_json(url, verbose=verbose)
@@ -837,7 +1121,12 @@ def query_pubmed_by_pmid(pmid: str, verbose: bool = False) -> dict[str, Any] | N
         if (aid.attrib.get("IdType") or "").lower() == "doi":
             doi = aid.text or ""
             break
-    abstract = " ".join(t.text or "" for t in article_node.findall(".//Abstract/AbstractText"))
+    abstract = " ".join("".join(t.itertext()) for t in article_node.findall(".//Abstract/AbstractText"))
+    keywords = [
+        clean_text("".join(keyword.itertext()))
+        for keyword in root.findall(".//KeywordList/Keyword")
+        if clean_text("".join(keyword.itertext()))
+    ]
     return article_template(
         title=clean_text(title),
         authors=authors,
@@ -849,7 +1138,11 @@ def query_pubmed_by_pmid(pmid: str, verbose: bool = False) -> dict[str, Any] | N
         doi=doi,
         url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
         metadata_source="pubmed",
-        abstract=clean_text(abstract),
+        abstract=abstract,
+        abstract_source="pubmed",
+        keywords=keywords,
+        keywords_source=["pubmed"] if keywords else [],
+        enrichment_sources=["pubmed"],
         confidence=0.9 if doi else 0.78,
         pmid=pmid,
     )
@@ -888,7 +1181,9 @@ def query_arxiv_by_id(arxiv_id: str, verbose: bool = False) -> dict[str, Any] | 
         pdf_url=f"https://arxiv.org/pdf/{clean_id}",
         source_page=f"https://arxiv.org/abs/{clean_id}",
         metadata_source="arxiv",
-        abstract=clean_text(entry.findtext("a:summary", "", ns)),
+        abstract=entry.findtext("a:summary", "", ns),
+        abstract_source="arxiv",
+        enrichment_sources=["arxiv"],
         confidence=0.86,
         arxiv_id=clean_id,
     )
@@ -897,21 +1192,61 @@ def query_arxiv_by_id(arxiv_id: str, verbose: bool = False) -> dict[str, Any] | 
 def merge_article(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[str, Any]:
     if not extra:
         return base
-    merged = dict(base)
-    for key, value in extra.items():
+    merged = article_template(**base)
+    incoming = article_template(**extra)
+    title = merged.get("title") or incoming.get("title") or ""
+    base_abstract = merged.get("abstract") or ""
+    incoming_abstract = incoming.get("abstract") or ""
+    base_source = merged.get("abstract_source") or merged.get("metadata_source") or ""
+    incoming_source = incoming.get("abstract_source") or incoming.get("metadata_source") or ""
+    base_priority = abstract_source_priority(base_source)
+    incoming_priority = abstract_source_priority(incoming_source)
+    if incoming_abstract and (
+        not base_abstract
+        or incoming_priority > base_priority
+        or (
+            incoming_priority == base_priority
+            and abstract_quality_score(incoming_abstract, title, incoming_source)
+            > abstract_quality_score(base_abstract, title, base_source)
+        )
+    ):
+        merged["abstract"] = incoming_abstract
+        merged["abstract_source"] = incoming_source
+
+    for key in (
+        "keywords",
+        "keywords_source",
+        "concepts",
+        "concepts_source",
+        "enrichment_sources",
+        "metadata_warnings",
+        "notes",
+    ):
+        merged[key] = _dedupe_strings(list(merged.get(key) or []) + list(incoming.get(key) or []))
+
+    handled = {
+        "abstract",
+        "abstract_source",
+        "keywords",
+        "keywords_source",
+        "concepts",
+        "concepts_source",
+        "enrichment_sources",
+        "metadata_warnings",
+        "notes",
+    }
+    for key, value in incoming.items():
+        if key in handled:
+            continue
         if key == "authors":
             if value and (not merged.get(key) or len(value) > len(merged.get(key, []))):
                 merged[key] = value
-        elif key == "keywords":
-            merged[key] = list(dict.fromkeys(as_list(merged.get(key)) + as_list(value)))
-        elif key == "notes":
-            merged[key] = list(dict.fromkeys(as_list(merged.get(key)) + as_list(value)))
         elif key == "pdf_candidates":
             existing = merged.get(key) if isinstance(merged.get(key), list) else []
-            incoming = value if isinstance(value, list) else []
+            incoming_candidates = value if isinstance(value, list) else []
             seen = set()
             candidates = []
-            for item in existing + incoming:
+            for item in existing + incoming_candidates:
                 if not isinstance(item, dict):
                     continue
                 url = item.get("url", "")
@@ -933,30 +1268,97 @@ def merge_article(base: dict[str, Any], extra: dict[str, Any] | None) -> dict[st
             if not merged.get(key) or key in ("citation_count", "journal_rank"):
                 merged[key] = value
     merged["doi"] = normalize_doi(merged.get("doi", ""))
-    return merged
+    return article_template(**merged)
+
+
+def enrich_article_metadata(article: dict[str, Any]) -> dict[str, Any]:
+    result = article_template(**article)
+    source_keywords = result.get("keywords") or []
+    source_concepts = result.get("concepts") or []
+    canonical_terms = extract_canonical_terms(
+        result.get("title"),
+        result.get("abstract"),
+        " ".join(source_keywords),
+        " ".join(source_concepts),
+    )
+    if canonical_terms:
+        result["keywords"] = _dedupe_strings(source_keywords + canonical_terms)
+        result["concepts"] = _dedupe_strings(source_concepts + canonical_terms)
+        result["keywords_source"] = _dedupe_strings(
+            list(result.get("keywords_source") or []) + ["conservative-text-rules"]
+        )
+        result["concepts_source"] = _dedupe_strings(
+            list(result.get("concepts_source") or []) + ["conservative-text-rules"]
+        )
+        result["enrichment_sources"] = _dedupe_strings(
+            list(result.get("enrichment_sources") or []) + ["conservative-text-rules"]
+        )
+    for source in (
+        [result.get("abstract_source")] if result.get("abstract_source") else []
+    ) + list(result.get("keywords_source") or []) + list(result.get("concepts_source") or []):
+        if source:
+            result["enrichment_sources"] = _dedupe_strings(
+                list(result.get("enrichment_sources") or []) + [source]
+            )
+    result["metadata_warnings"] = _dedupe_strings(
+        list(result.get("metadata_warnings") or [])
+        + abstract_quality_warnings(
+            result.get("abstract") or "",
+            result.get("title") or "",
+            result.get("abstract_source") or "",
+        )
+    )
+    return result
 
 
 def enrich_one(article: dict[str, Any], verbose: bool = False) -> dict[str, Any]:
     result = article_template(**article)
-    try:
-        if result.get("doi"):
+    if result.get("doi"):
+        try:
             crossref = query_crossref_by_doi(result["doi"], verbose=verbose)
             result = merge_article(result, crossref)
+        except Exception as exc:  # noqa: BLE001
+            result["metadata_warnings"] = _dedupe_strings(
+                list(result.get("metadata_warnings") or []) + [f"CrossRef enrichment failed: {exc}"]
+            )
+        try:
             openalex = query_openalex_by_doi(result["doi"], verbose=verbose)
             result = merge_article(result, openalex)
-        if result.get("pmid"):
+        except Exception as exc:  # noqa: BLE001
+            result["metadata_warnings"] = _dedupe_strings(
+                list(result.get("metadata_warnings") or []) + [f"OpenAlex enrichment failed: {exc}"]
+            )
+    if result.get("pmid"):
+        try:
             result = merge_article(result, query_pubmed_by_pmid(result["pmid"], verbose=verbose))
-        if result.get("arxiv_id"):
+        except Exception as exc:  # noqa: BLE001
+            result["metadata_warnings"] = _dedupe_strings(
+                list(result.get("metadata_warnings") or []) + [f"PubMed enrichment failed: {exc}"]
+            )
+    if result.get("arxiv_id"):
+        try:
             result = merge_article(result, query_arxiv_by_id(result["arxiv_id"], verbose=verbose))
-        if not result.get("doi") and result.get("title"):
+        except Exception as exc:  # noqa: BLE001
+            result["metadata_warnings"] = _dedupe_strings(
+                list(result.get("metadata_warnings") or []) + [f"arXiv enrichment failed: {exc}"]
+            )
+    if not result.get("doi") and result.get("title"):
+        try:
             result = merge_article(result, query_crossref_by_title(result["title"], verbose=verbose))
-            if not result.get("doi"):
+        except Exception as exc:  # noqa: BLE001
+            result["metadata_warnings"] = _dedupe_strings(
+                list(result.get("metadata_warnings") or []) + [f"CrossRef title enrichment failed: {exc}"]
+            )
+        if not result.get("doi"):
+            try:
                 result = merge_article(result, query_openalex_by_title(result["title"], verbose=verbose))
-    except Exception as exc:  # noqa: BLE001
-        result.setdefault("notes", []).append(f"Metadata enrichment failed: {exc}")
+            except Exception as exc:  # noqa: BLE001
+                result["metadata_warnings"] = _dedupe_strings(
+                    list(result.get("metadata_warnings") or []) + [f"OpenAlex title enrichment failed: {exc}"]
+                )
     if result.get("doi") and not result.get("url"):
         result["url"] = f"https://doi.org/{result['doi']}"
-    return result
+    return enrich_article_metadata(result)
 
 
 def year_in_range(article: dict[str, Any], year_from: int, year_to: int) -> bool:
@@ -1390,10 +1792,29 @@ def write_markdown(articles: list[dict[str, Any]], path: Path) -> None:
         lines.append(f"- OA status: {article.get('oa_status') or ''}")
         lines.append(f"- License: {article.get('license') or ''}")
         lines.append(f"- Metadata source: {article.get('metadata_source') or ''}")
+        lines.append(f"- Abstract source: {article.get('abstract_source') or ''}")
+        lines.append(
+            f"- Metadata enrichment sources: {'; '.join(article.get('enrichment_sources') or [])}"
+        )
+        lines.append(
+            f"- Metadata warnings: {'; '.join(article.get('metadata_warnings') or [])}"
+        )
         notes = "; ".join(article.get("notes") or [])
         if float(article.get("confidence") or 0) < 0.6:
             notes = (notes + "; " if notes else "") + "Low confidence: manual verification recommended."
         lines.append(f"- Notes: {notes}")
+        lines.append("")
+        lines.append("### Abstract")
+        lines.append("")
+        lines.append(article.get("abstract") or "")
+        lines.append("")
+        lines.append("### Keywords")
+        lines.append("")
+        lines.append("; ".join(article.get("keywords") or []))
+        lines.append("")
+        lines.append("### Concepts")
+        lines.append("")
+        lines.append("; ".join(article.get("concepts") or []))
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -1431,6 +1852,7 @@ def write_onefind_index(articles: list[dict[str, Any]], run_dir: Path) -> None:
     lines = ["# OneFind Literature Index", ""]
     for idx, article in enumerate(articles, 1):
         lines.append(f"## Article {idx}: {article.get('title') or '(untitled)'}")
+        lines.append(f"- Title: {article.get('title') or ''}")
         lines.append(f"- DOI: {article.get('doi') or ''}")
         lines.append(f"- Year: {article.get('year') or ''}")
         lines.append(f"- Journal: {article.get('journal') or ''}")
@@ -1439,6 +1861,10 @@ def write_onefind_index(articles: list[dict[str, Any]], run_dir: Path) -> None:
         lines.append(f"- Source URL: {article.get('url') or article.get('source_page') or ''}")
         lines.append(f"- Abstract: {article.get('abstract') or ''}")
         lines.append(f"- Keywords: {'; '.join(article.get('keywords') or [])}")
+        lines.append(f"- Concepts: {'; '.join(article.get('concepts') or [])}")
+        lines.append(f"- PDF status: {article.get('pdf_status') or ''}")
+        lines.append(f"- OA status: {article.get('oa_status') or ''}")
+        lines.append(f"- Source capture dir: {run_dir.resolve()}")
         notes = "; ".join(article.get("notes") or [])
         if article.get("pdf_status") and article.get("pdf_status") != "downloaded":
             notes = (notes + "; " if notes else "") + f"PDF status: {article.get('pdf_status')}"
@@ -1493,6 +1919,20 @@ def write_control_files(
     (run_dir / "failed.txt").write_text("\n".join(failed) + ("\n" if failed else ""), encoding="utf-8")
 
     low_conf = [a for a in articles if float(a.get("confidence") or 0) < 0.6]
+    abstract_source_counts: dict[str, int] = {}
+    keyword_source_counts: dict[str, int] = {}
+    concept_source_counts: dict[str, int] = {}
+    metadata_warning_count = 0
+    for article in articles:
+        if article.get("abstract"):
+            source = article.get("abstract_source") or "unknown"
+            abstract_source_counts[source] = abstract_source_counts.get(source, 0) + 1
+        for source in article.get("keywords_source") or []:
+            keyword_source_counts[source] = keyword_source_counts.get(source, 0) + 1
+        for source in article.get("concepts_source") or []:
+            concept_source_counts[source] = concept_source_counts.get(source, 0) + 1
+        metadata_warning_count += len(article.get("metadata_warnings") or [])
+    abstract_found = sum(1 for article in articles if article.get("abstract"))
     lines = [
         "# Web Capture Run Report",
         "",
@@ -1504,6 +1944,11 @@ def write_control_files(
         f"- PDF downloaded total: {report.get('pdf_downloaded_total')}",
         f"- Failed/flagged records: {len(failed)}",
         f"- Low-confidence records requiring manual check: {len(low_conf)}",
+        f"- Abstract coverage: {abstract_found}/{len(articles)}",
+        f"- Abstract source counts: {json.dumps(abstract_source_counts, ensure_ascii=False)}",
+        f"- Keyword source counts: {json.dumps(keyword_source_counts, ensure_ascii=False)}",
+        f"- Concept source counts: {json.dumps(concept_source_counts, ensure_ascii=False)}",
+        f"- Metadata warnings count: {metadata_warning_count}",
     ]
     if report.get("input_warning"):
         lines.append(f"- Input warning: {report.get('input_warning')}")
@@ -1539,6 +1984,7 @@ def write_control_files(
         if float(article.get("confidence") or 0) < 0.6
         or article.get("pdf_status") in {"found_url_download_failed", "skipped_non_pdf", "skipped_unsafe_url"}
         or article.get("notes")
+        or article.get("metadata_warnings")
     ]
     lines.extend(["", "## Needs Manual Check", ""])
     if manual_check:

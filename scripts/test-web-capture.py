@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import tempfile
 import sys
+import unittest
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -75,6 +76,18 @@ def test_sub_sup_tags_do_not_insert_spaces(wc) -> None:
     )
 
 
+def test_jats_abstract_cleaning(wc) -> None:
+    raw = (
+        "<jats:p>A nickel-catalyzed C(sp <jats:sup>3</jats:sup> ) reaction "
+        "uses S <jats:sub>H</jats:sub> 2 chemistry &amp; mild conditions.</jats:p>\n"
+    )
+    cleaned = wc.clean_abstract_text(raw)
+    assert_true("<" not in cleaned, f"JATS markup leaked: {cleaned}")
+    assert_true("C(sp3)" in cleaned, f"C(sp 3 ) was not normalized: {cleaned}")
+    assert_true("SH2" in cleaned, f"S H 2 was not normalized: {cleaned}")
+    assert_true("&amp;" not in cleaned and "&" in cleaned, f"HTML entity not decoded: {cleaned}")
+
+
 def test_arxiv_detection_requires_prefix(wc) -> None:
     assert_true(
         wc.extract_arxiv_id("DOI 10.48550/arXiv.1706.03762", "") == "",
@@ -94,6 +107,11 @@ def test_meta_extraction(wc, fixtures: Path) -> None:
     assert_true(first["title"] == "Catalytic conversion of captured carbon dioxide", "Meta title mismatch")
     assert_true(first["doi"] == "10.1234/example.2024.001", "Meta DOI mismatch")
     assert_true(first["authors"] == ["Alice Zhang", "Bernard Smith"], "Meta author mismatch")
+    assert_true(first["abstract_source"] == "html-meta:citation_abstract", "Citation abstract not preferred")
+    assert_true("C(sp3)" in first["abstract"], "Publisher abstract was not cleaned")
+    assert_true("nickel catalysis" in first["keywords"], "citation_keywords missing")
+    assert_true("single electron transfer" in first["keywords"], "article:tag missing")
+    assert_true("alkyl halide" in first["keywords"], "meta keywords missing")
 
 
 def test_citation_pdf_url_extraction(wc, fixtures: Path) -> None:
@@ -128,6 +146,8 @@ def test_openalex_and_unpaywall_fixture_candidates(wc, fixtures: Path) -> None:
     article = wc.openalex_to_article(openalex)
     assert_true(article["pdf_url"] == "https://example.org/openalex-best.pdf", "OpenAlex best OA PDF missing")
     assert_true(article["oa_status"] == "gold", "OpenAlex OA status missing")
+    assert_true(article["abstract"] == "A complete OpenAlex abstract.", "OpenAlex abstract reconstruction failed")
+    assert_true("Photoredox catalysis" in article["concepts"], "OpenAlex concept missing")
     unpaywall = json.loads((fixtures / "sample_unpaywall.json").read_text(encoding="utf-8"))
     old_request_json = wc.request_json
     wc.request_json = lambda url, timeout=20, retries=2, verbose=False: unpaywall
@@ -137,6 +157,103 @@ def test_openalex_and_unpaywall_fixture_candidates(wc, fixtures: Path) -> None:
         wc.request_json = old_request_json
     assert_true(len(candidates) == 2, f"Unexpected Unpaywall candidates: {candidates}")
     assert_true(candidates[0]["oa_status"] == "green", "Unpaywall OA status missing")
+
+
+def test_openalex_abstract_reconstruction_is_robust(wc) -> None:
+    warnings = []
+    abstract = wc.invert_openalex_abstract(
+        {
+            "Stable": [0],
+            "rebuild.": [1],
+            "duplicate": [1],
+            "broken": ["not-a-position", -1],
+            "missing-list": "2",
+        },
+        warnings,
+    )
+    assert_true(abstract == "Stable rebuild.", f"Unexpected OpenAlex abstract: {abstract}")
+    assert_true(any("duplicate position" in warning for warning in warnings), "Duplicate position warning missing")
+    assert_true(any("invalid position" in warning for warning in warnings), "Invalid position warning missing")
+    assert_true(any("not a list" in warning for warning in warnings), "Malformed positions warning missing")
+
+
+def test_abstract_source_priority(wc) -> None:
+    crossref = wc.article_template(
+        title="A complete article title",
+        abstract=") bonds remains a fragment without its missing beginning.",
+        abstract_source="crossref",
+        metadata_source="crossref",
+    )
+    openalex = wc.article_template(
+        title="A complete article title",
+        abstract=(
+            "This complete OpenAlex abstract introduces the problem. "
+            "It then describes the method and reports the principal result."
+        ),
+        abstract_source="openalex",
+        metadata_source="openalex",
+    )
+    merged = wc.merge_article(crossref, openalex)
+    assert_true(merged["abstract_source"] == "openalex", f"Wrong abstract selected: {merged}")
+    assert_true(merged["abstract"].startswith("This complete"), "Complete OpenAlex abstract not selected")
+    assert_true(
+        any("incomplete fragment" in warning for warning in merged["metadata_warnings"]),
+        "Fragment warning was not retained",
+    )
+    seo = wc.article_template(
+        title="A complete article title",
+        abstract="Read the full article on the publisher website. " * 20,
+        abstract_source="html-meta:og:description",
+        metadata_source="html-meta",
+    )
+    formal = wc.article_template(
+        title="A complete article title",
+        abstract="A concise formal abstract reports the principal result.",
+        abstract_source="crossref",
+        metadata_source="crossref",
+    )
+    preferred = wc.merge_article(seo, formal)
+    assert_true(preferred["abstract_source"] == "crossref", "SEO description displaced a formal abstract")
+
+
+def test_conservative_keyword_and_concept_extraction(wc) -> None:
+    article = wc.enrich_article_metadata(
+        wc.article_template(
+            title="C(sp 3 )-C(sp 3 ) cross-coupling",
+            abstract=(
+                "Nickel-catalyzed cross-coupling of redox-active esters with alkyl halides "
+                "proceeds through single-electron transfer. Biomimetic S H 2 homolytic "
+                "substitution with iron porphyrin is also discussed."
+            ),
+            metadata_source="fixture",
+        )
+    )
+    expected = {
+        "nickel catalysis",
+        "redox-active ester",
+        "alkyl halide",
+        "single electron transfer",
+        "SH2",
+        "homolytic substitution",
+        "iron porphyrin",
+        "cross-coupling",
+        "C(sp3)-C(sp3) cross-coupling",
+    }
+    assert_true(expected.issubset(set(article["keywords"])), f"Missing keywords: {expected - set(article['keywords'])}")
+    assert_true(expected.issubset(set(article["concepts"])), f"Missing concepts: {expected - set(article['concepts'])}")
+
+
+def test_conservative_keyword_negative_cases(wc) -> None:
+    article = wc.enrich_article_metadata(
+        wc.article_template(
+            title="Analytical control experiment",
+            abstract="An acid wash changed catalyst amount, coupling constant, and a set of values.",
+            metadata_source="fixture",
+        )
+    )
+    forbidden = {"carboxylic acid", "nickel catalysis", "cross-coupling", "single electron transfer"}
+    assert_true(not forbidden.intersection(article["keywords"]), f"False-positive keywords: {article['keywords']}")
+    assert_true(not forbidden.intersection(article["concepts"]), f"False-positive concepts: {article['concepts']}")
 
 
 def test_multi_doi_dedupe(wc, fixtures: Path) -> None:
@@ -156,6 +273,14 @@ def test_outputs(wc) -> None:
         doi="10.1234/output.fixture",
         source_page="fixture",
         metadata_source="test",
+        abstract="A complete fixture abstract about nickel-catalyzed cross-coupling.",
+        abstract_source="test-abstract",
+        keywords=["nickel catalysis"],
+        keywords_source=["test-keywords"],
+        concepts=["cross-coupling"],
+        concepts_source=["test-concepts"],
+        enrichment_sources=["test"],
+        metadata_warnings=["fixture warning"],
         confidence=0.9,
         pdf_status="downloaded",
         pdf_source="test PDF",
@@ -184,9 +309,25 @@ def test_outputs(wc) -> None:
         captured_md = (out / "captured.md").read_text(encoding="utf-8")
         assert_true("# Captured Literature" in captured_md, "Markdown heading missing")
         assert_true("PDF status: downloaded" in captured_md, "Markdown missing PDF status")
+        assert_true("### Abstract" in captured_md, "Markdown missing Abstract section")
+        assert_true("### Keywords" in captured_md, "Markdown missing Keywords section")
+        assert_true("### Concepts" in captured_md, "Markdown missing Concepts section")
+        captured_json = json.loads((out / "captured.json").read_text(encoding="utf-8"))[0]
+        for field in [
+            "abstract", "abstract_source", "keywords", "keywords_source", "concepts",
+            "concepts_source", "enrichment_sources", "metadata_warnings",
+        ]:
+            assert_true(field in captured_json, f"captured.json missing {field}")
         manifest = json.loads((out / "pdf_manifest.json").read_text(encoding="utf-8"))
         assert_true(manifest["downloaded"] == 1, "PDF manifest downloaded count wrong")
-        assert_true("Local PDF: pdfs/output.pdf" in (out / "onefind_index.md").read_text(encoding="utf-8"), "OneFind index missing local PDF")
+        onefind = (out / "onefind_index.md").read_text(encoding="utf-8")
+        assert_true("Local PDF: pdfs/output.pdf" in onefind, "OneFind index missing local PDF")
+        assert_true("Concepts: cross-coupling" in onefind, "OneFind index missing concepts")
+        assert_true("PDF status: downloaded" in onefind, "OneFind index missing PDF status")
+        assert_true("Source capture dir:" in onefind, "OneFind index missing capture directory")
+        run_report = (out / "run_report.md").read_text(encoding="utf-8")
+        assert_true("Abstract coverage: 1/1" in run_report, "Run report missing abstract coverage")
+        assert_true("Metadata warnings count: 1" in run_report, "Run report missing warning count")
         assert_true("captured.bib" in (out / "zotero_import_guide.md").read_text(encoding="utf-8"), "Zotero guide missing BibTeX instructions")
 
 
@@ -273,24 +414,23 @@ def test_title_fallback_does_not_crash(wc) -> None:
     assert_true(enriched["doi"] == "", "Title fallback should not invent DOI when APIs return nothing")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run no-network web-capture tests")
-    parser.add_argument("--fixtures", default=str(ROOT / "evals" / "web-capture"), help="Fixture directory")
-    args = parser.parse_args()
-
-    fixtures = Path(args.fixtures)
-    wc = load_web_capture()
-    tests = [
+def web_capture_tests(wc, fixtures: Path):
+    return [
         test_doi_regex,
         lambda module: test_noisy_reference_dois(module, fixtures),
         test_markup_sanitized_for_exports,
         test_sub_sup_tags_do_not_insert_spaces,
+        test_jats_abstract_cleaning,
         test_arxiv_detection_requires_prefix,
         lambda module: test_meta_extraction(module, fixtures),
         lambda module: test_citation_pdf_url_extraction(module, fixtures),
         lambda module: test_jsonld_extraction(module, fixtures),
         lambda module: test_jsonld_pdf_extraction(module, fixtures),
         lambda module: test_openalex_and_unpaywall_fixture_candidates(module, fixtures),
+        test_openalex_abstract_reconstruction_is_robust,
+        test_abstract_source_priority,
+        test_conservative_keyword_and_concept_extraction,
+        test_conservative_keyword_negative_cases,
         lambda module: test_multi_doi_dedupe(module, fixtures),
         test_outputs,
         test_pdf_filename_cleaning,
@@ -299,6 +439,26 @@ def main() -> int:
         test_not_requested_default,
         test_title_fallback_does_not_crash,
     ]
+
+
+def load_tests(loader, standard_tests, pattern):
+    del loader, standard_tests, pattern
+    fixtures = ROOT / "evals" / "web-capture"
+    wc = load_web_capture()
+    suite = unittest.TestSuite()
+    for test in web_capture_tests(wc, fixtures):
+        suite.addTest(unittest.FunctionTestCase(lambda test=test: test(wc)))
+    return suite
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run no-network web-capture tests")
+    parser.add_argument("--fixtures", default=str(ROOT / "evals" / "web-capture"), help="Fixture directory")
+    args = parser.parse_args()
+
+    fixtures = Path(args.fixtures)
+    wc = load_web_capture()
+    tests = web_capture_tests(wc, fixtures)
     for test in tests:
         test(wc)
     print(f"web-capture tests passed: {len(tests)}")
