@@ -414,6 +414,89 @@ def test_title_fallback_does_not_crash(wc) -> None:
     assert_true(enriched["doi"] == "", "Title fallback should not invent DOI when APIs return nothing")
 
 
+def test_safe_retrieval_profile_loads_and_validates(wc) -> None:
+    profile = wc.load_retrieval_profile("sjtu-vpn-literature")
+    wc.validate_retrieval_profile(profile)
+    assert_true(profile["profile_name"] == "sjtu-vpn-literature", "Profile name mismatch")
+    assert_true(profile["network"]["require_vpn"] is True, "Profile should require VPN")
+    assert_true(profile["security"]["export_browser_cookies"] is False, "Profile must not export cookies")
+
+
+def test_safe_retrieval_profile_rejects_unsafe_flags(wc) -> None:
+    profile = wc.load_retrieval_profile("sjtu-vpn-literature")
+    unsafe = json.loads(json.dumps(profile))
+    unsafe["security"]["export_browser_cookies"] = True
+    try:
+        wc.validate_retrieval_profile(unsafe)
+    except ValueError as exc:
+        assert_true("export_browser_cookies" in str(exc), f"Unexpected validation error: {exc}")
+        return
+    raise AssertionError("Unsafe profile was accepted")
+
+
+def test_safe_retrieval_profile_vpn_check_is_mockable(wc) -> None:
+    profile = wc.load_retrieval_profile("sjtu-vpn-literature")
+    original_request_text = wc.request_text
+    original_local_windows_vpn_active = wc.local_windows_vpn_active
+    try:
+        wc.local_windows_vpn_active = lambda: False
+        wc.request_text = lambda url, timeout=20, retries=2, verbose=False: "正在使用交大VPN"
+        wc.verify_profile_vpn(profile)
+        wc.request_text = lambda url, timeout=20, retries=2, verbose=False: "not connected"
+        failed = False
+        try:
+            wc.verify_profile_vpn(profile)
+        except RuntimeError as exc:
+            assert_true("VPN" in str(exc), f"Unexpected VPN error: {exc}")
+            failed = True
+        assert_true(failed, "VPN check accepted missing success text without adapter fallback")
+        wc.local_windows_vpn_active = lambda: True
+        wc.verify_profile_vpn(profile)
+    finally:
+        wc.request_text = original_request_text
+        wc.local_windows_vpn_active = original_local_windows_vpn_active
+
+
+def test_safe_retrieval_profile_stops_on_http_status(wc) -> None:
+    profile = wc.load_retrieval_profile("sjtu-vpn-literature")
+    original_urlopen = wc.urllib.request.urlopen
+    wc.configure_runtime_profile(profile)
+    try:
+        def fake_urlopen(req, timeout=20):
+            raise wc.urllib.error.HTTPError(
+                url="https://example.org/blocked",
+                code=403,
+                msg="Forbidden",
+                hdrs=None,
+                fp=None,
+            )
+
+        wc.urllib.request.urlopen = fake_urlopen
+        try:
+            wc.request_text("https://example.org/blocked", retries=0)
+        except RuntimeError as exc:
+            assert_true("status_403" in str(exc), f"Unexpected stop_on error: {exc}")
+            return
+        raise AssertionError("Profile did not stop on HTTP 403")
+    finally:
+        wc.urllib.request.urlopen = original_urlopen
+        wc.configure_runtime_profile({})
+
+
+def test_safe_retrieval_profile_login_stop_is_not_plain_nav(wc) -> None:
+    wc.configure_runtime_profile({"retrieval": {"stop_on": ["login_required"]}})
+    try:
+        nav_text = '<a href="/login">Log in</a><main>Public abstract text.</main>'
+        assert_true(wc.profile_text_stop_reason(nav_text) == "", "Plain login nav should not stop capture")
+        blocked_text = "Login required to access this article through your institution."
+        assert_true(
+            "login_required" in wc.profile_text_stop_reason(blocked_text),
+            "Explicit login-required text should stop capture",
+        )
+    finally:
+        wc.configure_runtime_profile({})
+
+
 def web_capture_tests(wc, fixtures: Path):
     return [
         test_doi_regex,
@@ -438,6 +521,11 @@ def web_capture_tests(wc, fixtures: Path):
         test_pdf_failure_does_not_stop_batch,
         test_not_requested_default,
         test_title_fallback_does_not_crash,
+        test_safe_retrieval_profile_loads_and_validates,
+        test_safe_retrieval_profile_rejects_unsafe_flags,
+        test_safe_retrieval_profile_vpn_check_is_mockable,
+        test_safe_retrieval_profile_stops_on_http_status,
+        test_safe_retrieval_profile_login_stop_is_not_plain_nav,
     ]
 
 

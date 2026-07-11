@@ -25,6 +25,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import time
 from typing import Any
@@ -46,6 +47,21 @@ ARXIV_RE = re.compile(
     re.IGNORECASE,
 )
 CONFIG_FILE = Path.home() / ".lit-search-cite" / "config.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROFILE_DIRS = (
+    PROJECT_ROOT / "configs" / "profiles",
+    Path.home() / ".lit-search-cite" / "profiles",
+)
+SAFE_METADATA_SOURCES = {"crossref", "openalex"}
+SAFE_OPEN_ACCESS_SOURCES = {"unpaywall", "pubmed_central", "europepmc", "arxiv", "openalex"}
+PROFILE_REQUIRED_STOPS = {"status_403", "status_429", "captcha", "login_required"}
+PROFILE_FORBIDDEN_SECURITY_TRUE = {
+    "store_jaccount_password",
+    "export_browser_cookies",
+    "bypass_captcha",
+    "rotate_ip",
+}
+ACTIVE_PROFILE_STOP_ON: set[str] = set()
 
 SCHEMA_FIELDS = [
     "title",
@@ -204,6 +220,234 @@ def _dedupe_strings(values: Any) -> list[str]:
         seen.add(key)
         output.append(value)
     return output
+
+
+def parse_profile_scalar(value: str) -> Any:
+    text = value.strip()
+    lower = text.lower()
+    if lower in {"null", "~"}:
+        return None
+    if lower == "true":
+        return True
+    if lower == "false":
+        return False
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        return text[1:-1]
+    try:
+        return int(text)
+    except ValueError:
+        return text
+
+
+def parse_simple_profile_yaml(raw: str) -> dict[str, Any]:
+    records: list[tuple[int, str]] = []
+    for line in raw.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        records.append((indent, line.strip()))
+    root: dict[str, Any] = {}
+    stack: list[tuple[int, Any]] = [(-1, root)]
+    for index, (indent, stripped) in enumerate(records):
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1]
+        if stripped.startswith("- "):
+            if not isinstance(parent, list):
+                raise ValueError("Profile YAML list item has no list parent.")
+            parent.append(parse_profile_scalar(stripped[2:].strip()))
+            continue
+        if ":" not in stripped:
+            raise ValueError(f"Unsupported profile YAML line: {stripped}")
+        key, value = stripped.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not isinstance(parent, dict):
+            raise ValueError(f"Profile YAML key has no mapping parent: {key}")
+        if value:
+            parent[key] = parse_profile_scalar(value)
+            continue
+        next_record = next((item for item in records[index + 1 :] if item[0] > indent), None)
+        container: Any = [] if next_record and next_record[1].startswith("- ") else {}
+        parent[key] = container
+        stack.append((indent, container))
+    return root
+
+
+def load_profile_yaml(path: Path) -> dict[str, Any]:
+    raw = path.read_text(encoding="utf-8")
+    try:
+        import yaml  # type: ignore
+
+        data = yaml.safe_load(raw) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f"Profile must be a mapping: {path}")
+        return data
+    except ModuleNotFoundError:
+        return parse_simple_profile_yaml(raw)
+
+
+def resolve_profile_path(profile: str) -> Path:
+    value = (profile or "").strip()
+    if not value:
+        raise ValueError("Profile name or path is empty.")
+    raw = Path(value).expanduser()
+    candidates: list[Path] = []
+    if raw.is_absolute() or raw.suffix:
+        candidates.append(raw)
+    if not raw.is_absolute():
+        for directory in PROFILE_DIRS:
+            if raw.suffix:
+                candidates.append(directory / raw)
+            else:
+                candidates.extend([directory / f"{value}.yml", directory / f"{value}.yaml"])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    searched = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"Profile not found: {value}. Searched: {searched}")
+
+
+def load_retrieval_profile(profile: str) -> dict[str, Any]:
+    path = resolve_profile_path(profile)
+    data = load_profile_yaml(path)
+    data["_profile_path"] = str(path)
+    if "profile_name" not in data:
+        data["profile_name"] = path.stem
+    return data
+
+
+def validate_retrieval_profile(profile: dict[str, Any]) -> None:
+    name = profile.get("profile_name") or "<unnamed>"
+    network = profile.get("network") or {}
+    if network.get("mode") not in {"system", None}:
+        raise ValueError(f"Profile {name}: only network.mode=system is supported.")
+    if network.get("proxy") not in {None, ""}:
+        raise ValueError(f"Profile {name}: proxy settings are not accepted; use the system network.")
+
+    retrieval = profile.get("retrieval") or {}
+    metadata_sources = set(as_list(retrieval.get("metadata_sources")))
+    unknown_metadata = metadata_sources - SAFE_METADATA_SOURCES
+    if unknown_metadata:
+        raise ValueError(f"Profile {name}: unsupported metadata source(s): {sorted(unknown_metadata)}")
+    oa_sources = set(as_list(retrieval.get("open_access_sources")))
+    unknown_oa = oa_sources - SAFE_OPEN_ACCESS_SOURCES
+    if unknown_oa:
+        raise ValueError(f"Profile {name}: unsupported open-access source(s): {sorted(unknown_oa)}")
+
+    for publisher, settings in ((retrieval.get("publisher_access") or {}).items()):
+        if not isinstance(settings, dict) or not settings.get("enabled"):
+            continue
+        if settings.get("mode") != "browser_assisted":
+            raise ValueError(f"Profile {name}: {publisher} access must be browser_assisted.")
+        if int(settings.get("max_concurrency") or 1) > 1:
+            raise ValueError(f"Profile {name}: {publisher} max_concurrency must be <= 1.")
+        if int(settings.get("minimum_interval_seconds") or 0) < 10:
+            raise ValueError(f"Profile {name}: {publisher} minimum_interval_seconds must be >= 10.")
+
+    stop_on = set(as_list(retrieval.get("stop_on")))
+    if stop_on and not PROFILE_REQUIRED_STOPS.issubset(stop_on):
+        missing = sorted(PROFILE_REQUIRED_STOPS - stop_on)
+        raise ValueError(f"Profile {name}: stop_on is missing safe stop condition(s): {missing}")
+
+    downloads = profile.get("downloads") or {}
+    directory = str(downloads.get("directory") or "").replace("\\", "/")
+    if directory:
+        path = Path(directory)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"Profile {name}: downloads.directory must stay relative to the run directory.")
+    if downloads.get("overwrite") is True:
+        raise ValueError(f"Profile {name}: downloads.overwrite must remain false.")
+
+    security = profile.get("security") or {}
+    for key in PROFILE_FORBIDDEN_SECURITY_TRUE:
+        if security.get(key) is True:
+            raise ValueError(f"Profile {name}: security.{key} must remain false.")
+
+
+def local_windows_vpn_active() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        result = subprocess.run(
+            ["ipconfig"],
+            capture_output=True,
+            text=True,
+            encoding="mbcs",
+            errors="replace",
+            timeout=8,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - VPN adapter probing is a best-effort fallback.
+        return False
+    output = f"{result.stdout}\n{result.stderr}"
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in output.splitlines():
+        if re.match(r"^\S.*\badapter\b.*:\s*$", line, flags=re.IGNORECASE):
+            if current:
+                blocks.append(current)
+            current = [line]
+            continue
+        if current:
+            current.append(line)
+    if current:
+        blocks.append(current)
+    for block_lines in blocks:
+        header = block_lines[0].lower()
+        if "vpn" not in header or "ppp" not in header:
+            continue
+        block = "\n".join(block_lines)
+        if re.search(r"\bIPv[46]\b.*:\s*[0-9a-fA-F:.]+", block, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def verify_profile_vpn(profile: dict[str, Any], verbose: bool = False) -> None:
+    network = profile.get("network") or {}
+    if network.get("require_vpn") is not True:
+        return
+    check_url = str(network.get("vpn_check_url") or "").strip()
+    success_text = str(network.get("vpn_success_text") or "").strip()
+    if not check_url or not success_text:
+        raise RuntimeError("Profile requires VPN but vpn_check_url or vpn_success_text is missing.")
+    text = request_text(check_url, timeout=10, retries=0, verbose=verbose)
+    if text and success_text in text:
+        return
+    if text and local_windows_vpn_active():
+        log("[profile] VPN success text was not found, but an active Windows VPN adapter was detected.", verbose)
+        return
+    raise RuntimeError(
+        "Profile requires SJTU VPN, but the VPN check did not confirm access. "
+        "Connect VPN manually and retry; no account password or browser cookies are stored."
+    )
+
+
+def configure_runtime_profile(profile: dict[str, Any] | None) -> None:
+    global ACTIVE_PROFILE_STOP_ON
+    retrieval = (profile or {}).get("retrieval") or {}
+    ACTIVE_PROFILE_STOP_ON = set(as_list(retrieval.get("stop_on")))
+
+
+def profile_text_stop_reason(text: str) -> str:
+    if not ACTIVE_PROFILE_STOP_ON:
+        return ""
+    lowered = (text or "").lower()
+    if "captcha" in ACTIVE_PROFILE_STOP_ON and re.search(r"\b(captcha|recaptcha|hcaptcha)\b", lowered):
+        return "Profile stop_on captcha triggered."
+    if "login_required" in ACTIVE_PROFILE_STOP_ON and re.search(
+        r"\b("
+        r"login required|"
+        r"sign in to access|"
+        r"log in to access|"
+        r"institutional login|"
+        r"institutional sign in|"
+        r"access through your institution"
+        r")\b",
+        lowered,
+    ):
+        return "Profile stop_on login_required triggered."
+    return ""
 
 
 def abstract_quality_warnings(text: str, title: str = "", source: str = "") -> list[str]:
@@ -855,6 +1099,14 @@ def request_bytes(url: str, timeout: int, retries: int = 2, verbose: bool = Fals
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return resp.read()
+        except urllib.error.HTTPError as exc:
+            stop_key = f"status_{exc.code}"
+            if stop_key in ACTIVE_PROFILE_STOP_ON:
+                raise RuntimeError(f"Profile stop_on {stop_key} triggered for {url}") from exc
+            last_error = str(exc)
+            log(f"[request] {url} failed on attempt {attempt + 1}: {last_error}", verbose)
+            if attempt < retries:
+                time.sleep(1.2 * (attempt + 1))
         except Exception as exc:  # noqa: BLE001 - clear CLI diagnostics matter more here.
             last_error = str(exc)
             log(f"[request] {url} failed on attempt {attempt + 1}: {last_error}", verbose)
@@ -869,10 +1121,18 @@ def request_text(url: str, timeout: int = DEFAULT_TIMEOUT, retries: int = 2, ver
         return None
     for enc in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
         try:
-            return payload.decode(enc)
+            text = payload.decode(enc)
+            stop_reason = profile_text_stop_reason(text)
+            if stop_reason:
+                raise RuntimeError(stop_reason)
+            return text
         except UnicodeDecodeError:
             continue
-    return payload.decode("utf-8", errors="replace")
+    text = payload.decode("utf-8", errors="replace")
+    stop_reason = profile_text_stop_reason(text)
+    if stop_reason:
+        raise RuntimeError(stop_reason)
+    return text
 
 
 def request_json(url: str, timeout: int = DEFAULT_TIMEOUT, retries: int = 2, verbose: bool = False) -> Any:
@@ -1950,6 +2210,8 @@ def write_control_files(
         f"- Concept source counts: {json.dumps(concept_source_counts, ensure_ascii=False)}",
         f"- Metadata warnings count: {metadata_warning_count}",
     ]
+    if report.get("profile"):
+        lines.insert(4, f"- Retrieval profile: {report.get('profile')}")
     if report.get("input_warning"):
         lines.append(f"- Input warning: {report.get('input_warning')}")
     pdf_status_counts: dict[str, int] = {}
@@ -2063,6 +2325,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dedupe", choices=["doi", "title"], default="doi", help="Deduplication strategy")
     parser.add_argument("--domain", default="general", help="Domain hint such as chemistry/biomedicine/cs/materials")
     parser.add_argument("--online-rank", action="store_true", help="Use configured OneScholar ranking when available")
+    parser.add_argument(
+        "--profile",
+        default="",
+        help="Optional safe retrieval profile name or path, e.g. sjtu-vpn-literature",
+    )
     parser.add_argument("--verbose", action="store_true", help="Print debug information")
     return parser
 
@@ -2074,6 +2341,16 @@ def main() -> int:
         formats = parse_formats(args.format)
     except ValueError as exc:
         parser.error(str(exc))
+    profile: dict[str, Any] = {}
+    if args.profile:
+        try:
+            profile = load_retrieval_profile(args.profile)
+            validate_retrieval_profile(profile)
+            verify_profile_vpn(profile, verbose=args.verbose)
+            configure_runtime_profile(profile)
+        except Exception as exc:  # noqa: BLE001 - argparse should show one concise error.
+            parser.error(str(exc))
+        log(f"[profile] {profile.get('profile_name')} ({profile.get('_profile_path')})", args.verbose)
 
     content, source_page, is_html, input_warning = read_input(args)
     input_source = args.url or args.html or args.text
@@ -2114,6 +2391,8 @@ def main() -> int:
         "pdf_downloaded_total": pdf_success_count,
         "input_warning": input_warning,
     }
+    if profile:
+        report["profile"] = profile.get("profile_name") or args.profile
     write_outputs(deduped, run_dir, formats, report)
 
     print(f"Captured {len(deduped)} record(s)")

@@ -14,6 +14,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `docs/browser-capture.md`, `docs/scansci-pdf-integration.md`, and `docs/onefind-workflow.md`.
 - Legal OA PDF handoff outputs: `pdf_manifest.json`, `onefind_index.md`, `zotero_import_guide.md`, and `pdfs/` run folders.
 - Local fixtures for open PDF meta tags, arXiv PDF JSON-LD, OpenAlex OA JSON, and Unpaywall JSON.
+- Safe retrieval profile support with `--profile sjtu-vpn-literature`, including VPN preflight and guardrails against stored passwords, cookie export, captcha bypass, and IP rotation.
 
 ### Changed
 - Installer/package allowlist now includes `docs/` and `evals/` so web-capture docs and fixtures are available after install.

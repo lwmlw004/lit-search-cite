@@ -22,6 +22,7 @@ param(
     [ValidateSet("doi","title")]
     [string]$Dedupe = "doi",
     [string]$Domain = "general",
+    [string]$Profile = "",
     [string]$Python = "python",
     [switch]$OnlineRank,
     [switch]$Verbose,
@@ -53,6 +54,7 @@ Options:
   -YearTo      Maximum publication year
   -Dedupe      doi or title
   -Domain      Domain hint such as chemistry, biomedicine, cs, materials
+  -Profile     Optional safe retrieval profile name or path
   -Python      Python executable (default: python)
   -OnlineRank  Use configured OneScholar ranking when available
   -Verbose     Print debug information
@@ -77,6 +79,7 @@ if ($Text) { $argsList += @("--text", $Text) }
 if ($YearFrom -gt 0) { $argsList += @("--year-from", $YearFrom) }
 if ($YearTo -gt 0) { $argsList += @("--year-to", $YearTo) }
 if ($OnlineRank) { $argsList += "--online-rank" }
+if ($Profile) { $argsList += @("--profile", $Profile) }
 if ($Verbose) { $argsList += "--verbose" }
 
 & $Python @argsList

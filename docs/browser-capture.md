@@ -18,6 +18,16 @@ Use this for publisher article pages, PubMed pages, arXiv pages, journal issue p
 
 Some publisher pages return HTTP 403 to command-line fetchers. That is normal. If the URL contains a DOI, PMID, or arXiv ID, `web-capture.py` falls back to that identifier and tries public metadata enrichment. For the most stable capture, save the browser-rendered page as HTML and use Option B. Live URL tests should not be the only acceptance check.
 
+### Optional Safe Retrieval Profile
+
+For SJTU VPN sessions, use the bundled profile only when you want an explicit VPN preflight and safety boundary check:
+
+```powershell
+py -3 scripts\web-capture.py --url "https://doi.org/10.xxxx/example" --out references\captured --pdf legal --profile sjtu-vpn-literature
+```
+
+The profile lives at `configs/profiles/sjtu-vpn-literature.yml`. It uses the system network, checks `https://net.sjtu.edu.cn/` for the configured VPN success text, and on Windows can fall back to detecting an active VPN/PPP adapter when that public page loads without the success text. It rejects unsafe settings such as stored JAccount passwords, exported browser cookies, captcha bypass, or IP rotation. It does not automate publisher login and does not change `--pdf legal` into a paywall bypass.
+
 ## Option B: Save the Page HTML
 
 In the browser, save the current page as HTML, then run:

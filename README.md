@@ -134,6 +134,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\web-capture.ps1 -Url "https:/
 
 开放 PDF 获取仅在 `--pdf legal` 时启用，来源限制为出版社明确给出的开放 PDF、Unpaywall、OpenAlex OA location、EuropePMC/PubMed Central 和 arXiv；不会在 `web-capture.py` 中内置 Sci-Hub、LibGen、Anna's Archive 或绕过付费墙逻辑。OneFind 工作流见 `docs/onefind-workflow.md`，scansci-pdf 可选衔接见 `docs/scansci-pdf-integration.md`，浏览器辅助见 `docs/browser-capture.md`。
 
+## 受控 VPN / 校园网 Profile
+
+仓库包含一个安全示例 profile：
+
+```powershell
+py -3 scripts\web-capture.py --url "https://doi.org/10.xxxx/example" --out references\captured --pdf legal --profile sjtu-vpn-literature
+```
+
+`configs/profiles/sjtu-vpn-literature.yml` 会在运行前检查当前网络是否显示正在使用交大 VPN；如果检测页可访问但未显示成功文案，Windows 下会额外识别已连接的 VPN/PPP 适配器。profile 还会校验不保存 JAccount 密码、不导出浏览器 cookies、不绕过验证码、不换 IP。ACS / Wiley 只标记为 browser-assisted、低并发、限速模式；`web-capture.py` 不会自动登录、不读取浏览器 cookie，也不会绕过付费墙。遇到 403、429、captcha 或 login-required 时应停止，建议改用浏览器另存 HTML 后 `--html` 抓取公开元数据。
+
 ## 合法开放 PDF 获取与本地知识库索引
 
 ```bash

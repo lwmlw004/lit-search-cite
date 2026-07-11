@@ -1,0 +1,55 @@
+profile_name: sjtu-vpn-literature
+
+network:
+  mode: system
+  proxy: null
+  require_vpn: true
+  vpn_check_url: https://net.sjtu.edu.cn/
+  vpn_success_text: 正在使用交大VPN
+
+retrieval:
+  metadata_sources:
+    - crossref
+    - openalex
+
+  open_access_sources:
+    - unpaywall
+    - pubmed_central
+    - arxiv
+
+  publisher_access:
+    acs:
+      enabled: true
+      mode: browser_assisted
+      max_concurrency: 1
+      minimum_interval_seconds: 12
+
+    wiley:
+      enabled: true
+      mode: browser_assisted
+      max_concurrency: 1
+      minimum_interval_seconds: 12
+
+  retry:
+    attempts: 2
+    backoff_seconds:
+      - 30
+      - 120
+
+  stop_on:
+    - status_403
+    - status_429
+    - captcha
+    - login_required
+
+downloads:
+  directory: ./downloads
+  resume: true
+  overwrite: false
+  filename_template: "{year}_{journal}_{doi}.pdf"
+
+security:
+  store_jaccount_password: false
+  export_browser_cookies: false
+  bypass_captcha: false
+  rotate_ip: false
