@@ -16,6 +16,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import codecs
 import csv
 import datetime as dt
 import hashlib
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import time
 from typing import Any
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -62,6 +64,7 @@ PROFILE_FORBIDDEN_SECURITY_TRUE = {
     "rotate_ip",
 }
 ACTIVE_PROFILE_STOP_ON: set[str] = set()
+HTML_MOJIBAKE_MARKERS = ("鈥", "Ã", "â€“", "â€”", "â€", "Â")
 
 SCHEMA_FIELDS = [
     "title",
@@ -220,6 +223,94 @@ def _dedupe_strings(values: Any) -> list[str]:
         seen.add(key)
         output.append(value)
     return output
+
+
+def canonical_encoding_name(encoding: str) -> str:
+    return codecs.lookup(encoding.strip()).name
+
+
+def detect_bom_encoding(data: bytes) -> str:
+    if data.startswith(codecs.BOM_UTF8):
+        return "utf-8-sig"
+    if data.startswith(codecs.BOM_UTF32_LE):
+        return "utf-32-le"
+    if data.startswith(codecs.BOM_UTF32_BE):
+        return "utf-32-be"
+    if data.startswith(codecs.BOM_UTF16_LE):
+        return "utf-16-le"
+    if data.startswith(codecs.BOM_UTF16_BE):
+        return "utf-16-be"
+    return ""
+
+
+def declared_html_encodings(data: bytes) -> list[str]:
+    head = data[:65536].decode("latin-1", errors="replace")
+    encodings: list[str] = []
+    patterns = [
+        r"<meta[^>]+charset\s*=\s*['\"]?\s*([A-Za-z0-9._:-]+)",
+        r"<meta[^>]+content\s*=\s*['\"][^'\"]*charset\s*=\s*([A-Za-z0-9._:-]+)",
+        r"<\?xml[^>]+encoding\s*=\s*['\"]\s*([A-Za-z0-9._:-]+)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, head, flags=re.IGNORECASE):
+            try:
+                name = canonical_encoding_name(match.group(1))
+            except LookupError:
+                continue
+            if name not in encodings:
+                encodings.append(name)
+    return encodings
+
+
+def html_decode_quality(text: str, encoding: str, declared: list[str]) -> tuple[int, int, int, int]:
+    replacement_count = text.count("\ufffd")
+    mojibake_count = sum(text.count(marker) for marker in HTML_MOJIBAKE_MARKERS)
+    declaration_penalty = 0
+    if declared:
+        try:
+            declaration_penalty = 0 if canonical_encoding_name(encoding) in declared else 1
+        except LookupError:
+            declaration_penalty = 1
+    head = text[:20000].lower()
+    html_penalty = 0 if ("<html" in head or "<meta" in head or "<!doctype html" in head) else 5
+    return (
+        replacement_count * 100 + mojibake_count * 20 + declaration_penalty + html_penalty,
+        replacement_count,
+        mojibake_count,
+        declaration_penalty,
+    )
+
+
+def decode_local_html_bytes(data: bytes) -> str:
+    candidates: list[str] = []
+    bom_encoding = detect_bom_encoding(data)
+    if bom_encoding:
+        candidates.append(bom_encoding)
+    declared = declared_html_encodings(data)
+    candidates.extend(declared)
+    candidates.extend(["utf-8", "utf-8-sig", "gb18030", "cp1252"])
+
+    seen: set[str] = set()
+    decoded: list[tuple[tuple[int, int, int, int], int, str]] = []
+    for order, encoding in enumerate(candidates):
+        try:
+            canonical = canonical_encoding_name(encoding)
+        except LookupError:
+            continue
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        try:
+            text = data.decode(canonical, errors="strict")
+        except UnicodeDecodeError:
+            text = data.decode(canonical, errors="replace")
+        decoded.append((html_decode_quality(text, canonical, declared), order, text))
+
+    if not decoded:
+        text = data.decode("utf-8", errors="replace")
+    else:
+        text = min(decoded, key=lambda item: (item[0], item[1]))[2]
+    return unicodedata.normalize("NFC", text)
 
 
 def parse_profile_scalar(value: str) -> Any:
@@ -2297,7 +2388,7 @@ def read_input(args: argparse.Namespace) -> tuple[str, str, bool, str]:
         return content, args.url, True, ""
     if args.html:
         path = Path(args.html)
-        return path.read_text(encoding="utf-8", errors="replace"), str(path), True, ""
+        return decode_local_html_bytes(path.read_bytes()), str(path), True, ""
     if args.text:
         path = Path(args.text)
         return path.read_text(encoding="utf-8", errors="replace"), str(path), False, ""

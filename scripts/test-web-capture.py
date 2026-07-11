@@ -114,6 +114,34 @@ def test_meta_extraction(wc, fixtures: Path) -> None:
     assert_true("alkyl halide" in first["keywords"], "meta keywords missing")
 
 
+def test_utf8_html_decode_preserves_en_dash(wc, fixtures: Path) -> None:
+    data = (fixtures / "sample_acs_utf8_meta.html").read_bytes()
+    html = wc.decode_local_html_bytes(data)
+    assert_true("C(sp3)–C(sp3)" in html, "UTF-8 en dash was not preserved")
+    assert_true("鈥" not in html and "�" not in html, "Mojibake leaked into decoded HTML")
+
+
+def test_acs_utf8_meta_extraction(wc, fixtures: Path) -> None:
+    html = wc.decode_local_html_bytes((fixtures / "sample_acs_utf8_meta.html").read_bytes())
+    articles = wc.build_initial_candidates(html, "sample_acs_utf8_meta.html", True)
+    first = articles[0]
+    assert_true(first["doi"] == "10.1021/jacs.6c08562", "ACS DOI not extracted")
+    assert_true("C(sp3)–C(sp3)" in first["title"], f"ACS title lost en dash: {first['title']}")
+    assert_true("C(sp3)–C(sp3)" in first["abstract"], f"ACS abstract lost en dash: {first['abstract']}")
+    combined = first["title"] + first["abstract"]
+    assert_true("鈥" not in combined and "�" not in combined, "ACS meta extraction contains mojibake")
+
+
+def test_html_decode_prefers_quality_over_bad_declaration(wc) -> None:
+    html = (
+        '<!doctype html><html><head><meta charset="windows-1252">'
+        "<title>C(sp3)–C(sp3) cross-coupling</title></head></html>"
+    )
+    decoded = wc.decode_local_html_bytes(html.encode("utf-8"))
+    assert_true("C(sp3)–C(sp3)" in decoded, "UTF-8 bytes lost en dash under bad declaration")
+    assert_true("â€“" not in decoded and "鈥" not in decoded and "�" not in decoded, "Bad declaration produced mojibake")
+
+
 def test_citation_pdf_url_extraction(wc, fixtures: Path) -> None:
     html = (fixtures / "sample_open_pdf_meta.html").read_text(encoding="utf-8")
     articles = wc.build_initial_candidates(html, "https://example.org/article", True)
@@ -506,6 +534,9 @@ def web_capture_tests(wc, fixtures: Path):
         test_jats_abstract_cleaning,
         test_arxiv_detection_requires_prefix,
         lambda module: test_meta_extraction(module, fixtures),
+        lambda module: test_utf8_html_decode_preserves_en_dash(module, fixtures),
+        lambda module: test_acs_utf8_meta_extraction(module, fixtures),
+        test_html_decode_prefers_quality_over_bad_declaration,
         lambda module: test_citation_pdf_url_extraction(module, fixtures),
         lambda module: test_jsonld_extraction(module, fixtures),
         lambda module: test_jsonld_pdf_extraction(module, fixtures),
