@@ -1,0 +1,32 @@
+[
+  {
+    "title": "Nickel-catalyzed radical C(sp3)-C(sp3) cross-coupling with alkyl halides",
+    "authors": "Ada Example; Ben Example",
+    "year": 2025,
+    "venue": "Journal of Test Chemistry",
+    "doi": "10.1234/nickel.radical",
+    "citations": 42,
+    "source": "OpenAlex",
+    "oa_url": "https://example.org/nickel-radical.pdf"
+  },
+  {
+    "title": "A biomimetic SH2 mechanism for iron porphyrin cross-coupling",
+    "authors": "Chen Example",
+    "year": 2024,
+    "venue": "Science Fixture",
+    "doi": "https://doi.org/10.1234/sh2.fixture",
+    "citations": 30,
+    "source": "CrossRef",
+    "oa_url": ""
+  },
+  {
+    "title": "Coupling constant measurements in spectroscopy",
+    "authors": "Noise Example",
+    "year": 2026,
+    "venue": "Spectroscopy Noise",
+    "doi": "10.1234/noise",
+    "citations": 120,
+    "source": "CrossRef",
+    "oa_url": ""
+  }
+]

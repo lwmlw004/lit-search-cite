@@ -27,6 +27,7 @@ Thumbs.db
 
 # web-capture runtime outputs
 references/captured/
+references/workflows/
 **/pdfs/
 **/captured.json
 **/captured.csv
@@ -39,3 +40,8 @@ references/captured/
 **/pdf_manifest.json
 **/onefind_index.md
 **/zotero_import_guide.md
+**/zotero_queue.json
+**/workflow_summary.json
+**/workflow_report.md
+**/web_capture_result.json
+**/obsidian_import_result.json

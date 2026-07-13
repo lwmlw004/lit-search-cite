@@ -74,6 +74,7 @@ npx lit-search-cite@latest --target ~/my-skills      # 自定义路径
 |------|------|------|
 | `multi-search.py` | 全平台 | 一键多源搜索（OpenAlex/CrossRef/PubMed/arXiv）+ DOI 去重 + 期刊等级 |
 | `multi-search.ps1` | Windows | 同上，PowerShell 版 |
+| `literature-workflow.py` | 全平台 | 关键词发现 → 标准 capture → Zotero 队列 → 可选 Obsidian 导入的 MVP 编排脚本 |
 | `web-capture.py` | 全平台 | 从 URL/HTML/复制文本抓取网页文献，导出 BibTeX/RIS/CSV/Markdown/JSON |
 | `web-capture.ps1` | Windows | 同上，PowerShell 包装脚本 |
 | `test-web-capture.py` | 全平台 | `web-capture.py` 的无网络样例测试 |
@@ -133,6 +134,34 @@ powershell -ExecutionPolicy Bypass -File .\scripts\web-capture.ps1 -Url "https:/
 | `downloaded` | 已成功保存合法开放 PDF 到本次输出目录 |
 
 开放 PDF 获取仅在 `--pdf legal` 时启用，来源限制为出版社明确给出的开放 PDF、Unpaywall、OpenAlex OA location、EuropePMC/PubMed Central 和 arXiv；不会在 `web-capture.py` 中内置 Sci-Hub、LibGen、Anna's Archive 或绕过付费墙逻辑。OneFind 工作流见 `docs/onefind-workflow.md`，scansci-pdf 可选衔接见 `docs/scansci-pdf-integration.md`，浏览器辅助见 `docs/browser-capture.md`。
+
+## 关键词驱动端到端 MVP
+
+`scripts/literature-workflow.py` 是一个薄编排脚本，用于把关键词发现串到标准 capture、Zotero 队列和 Obsidian 导入：
+
+1. 调用 `multi-search.py` 做小规模关键词发现，或读取已有 discovery JSON。
+2. 按 DOI、年份、引用数和 `--priority` 术语筛选候选文献。
+3. 调用 `web-capture.py --text selected_identifiers.txt --pdf legal` 生成标准 capture 目录。
+4. 写出 `zotero_queue.json`，作为 Zotero Attachment Hub 或人工流程通过 Zotero API 消费前的中间交接契约。
+5. 可选调用现有 `obsidian-vault-mcp import-capture` 导入测试 vault。
+
+示例：
+
+```powershell
+python scripts\literature-workflow.py `
+  --query "asymmetric C(sp3)-C(sp3) coupling radical nickel SH2" `
+  --domain chemistry `
+  --recent-years 5 `
+  --select 10 `
+  --priority "radical,nickel catalysis,SH2 mechanism" `
+  --pdf legal `
+  --vault "C:\Users\you\Documents\Obsidian_Test_Vault" `
+  --import-obsidian
+```
+
+每次运行写入 `references/workflows/YYYYMMDD_HHMMSS/`，包括 `discovery.json`、`candidates.md`、`selected_identifiers.txt`、`zotero_queue.json` 和 `workflow_report.md`。标准 capture 仍写入 `references/captured/YYYYMMDD_HHMMSS/`，并额外复制一份 `zotero_queue.json` 到该 capture 目录。
+
+Zotero 队列只是交接契约，不是已验证的 Zotero Attachment Hub 运行时 schema：附件写入必须由 Zotero 插件或脚本通过 `Zotero.Attachments.importFromFile()` 等 Zotero API 完成，并在执行前自行校验队列。本 workflow 不写 `zotero.sqlite`，不读取浏览器 cookie，不保存账号/token，不绕过 403、429、验证码、登录或付费墙。
 
 ## 受控 VPN / 校园网 Profile
 
