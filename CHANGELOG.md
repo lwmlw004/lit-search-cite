@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Local fixtures for open PDF meta tags, arXiv PDF JSON-LD, OpenAlex OA JSON, and Unpaywall JSON.
 - Safe retrieval profile support with `--profile sjtu-vpn-literature`, including VPN preflight and guardrails against stored passwords, cookie export, captcha bypass, and IP rotation.
 - `scripts/literature-workflow.py` MVP for keyword discovery, standard web-capture runs, Zotero JSON queue handoff, and optional Obsidian test-vault import without writing Zotero sqlite.
+- `scripts/zotero-attachment-hub-adapter.py` for converting literature workflow handoff queues into Zotero Attachment Hub runtime queues and Zotero link maps.
 
 ### Changed
 - Installer/package allowlist now includes `docs/` and `evals/` so web-capture docs and fixtures are available after install.

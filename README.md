@@ -161,7 +161,17 @@ python scripts\literature-workflow.py `
 
 每次运行写入 `references/workflows/YYYYMMDD_HHMMSS/`，包括 `discovery.json`、`candidates.md`、`selected_identifiers.txt`、`zotero_queue.json` 和 `workflow_report.md`。标准 capture 仍写入 `references/captured/YYYYMMDD_HHMMSS/`，并额外复制一份 `zotero_queue.json` 到该 capture 目录。
 
-Zotero 队列只是交接契约，不是已验证的 Zotero Attachment Hub 运行时 schema：附件写入必须由 Zotero 插件或脚本通过 `Zotero.Attachments.importFromFile()` 等 Zotero API 完成，并在执行前自行校验队列。本 workflow 不写 `zotero.sqlite`，不读取浏览器 cookie，不保存账号/token，不绕过 403、429、验证码、登录或付费墙。
+Zotero 队列默认仍是中间交接契约；如需交给 Zotero Attachment Hub 插件运行，可先用 `scripts/zotero-attachment-hub-adapter.py` 转成插件真实的 `pending / processing / processed / failed` queue schema：
+
+```powershell
+python scripts\zotero-attachment-hub-adapter.py `
+  --input-queue references\workflows\YYYYMMDD_HHMMSS\zotero_queue.json `
+  --out references\workflows\YYYYMMDD_HHMMSS\zotero_attachment_hub_queue.json `
+  --max-items 2 `
+  --match-zotero-local-api
+```
+
+默认只生成 staging queue 和 `zotero_link_map.json`。只有显式添加 `--apply-profile-queue` 时才会在备份后合并到当前 Zotero profile 的 `zotero-attachment-hub\queue.json`。本 workflow 和 adapter 都不写 `zotero.sqlite`，不读取浏览器 cookie，不保存账号/token，不绕过 403、429、验证码、登录或付费墙。
 
 ## 受控 VPN / 校园网 Profile
 

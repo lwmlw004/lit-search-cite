@@ -41,6 +41,8 @@ references/workflows/
 **/onefind_index.md
 **/zotero_import_guide.md
 **/zotero_queue.json
+**/zotero_attachment_hub_queue.json
+**/zotero_link_map.json
 **/workflow_summary.json
 **/workflow_report.md
 **/web_capture_result.json
