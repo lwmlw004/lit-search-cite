@@ -17,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Safe retrieval profile support with `--profile sjtu-vpn-literature`, including VPN preflight and guardrails against stored passwords, cookie export, captcha bypass, and IP rotation.
 - `scripts/literature-workflow.py` MVP for keyword discovery, standard web-capture runs, Zotero JSON queue handoff, and optional Obsidian test-vault import without writing Zotero sqlite.
 - `scripts/zotero-attachment-hub-adapter.py` for converting literature workflow handoff queues into Zotero Attachment Hub runtime queues and Zotero link maps.
+- `scripts/research-network-incremental.py` for repeatable Research Knowledge Network incremental inventory, prepare, preview, verify, and guarded apply planning without modifying the formal vault by default.
 
 ### Changed
 - Installer/package allowlist now includes `docs/` and `evals/` so web-capture docs and fixtures are available after install.

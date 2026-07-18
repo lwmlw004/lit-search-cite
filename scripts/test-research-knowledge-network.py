@@ -169,6 +169,20 @@ class ResearchKnowledgeNetworkTests(unittest.TestCase):
             with self.assertRaises(self.mod.NetworkError):
                 self.mod.validate_test_vault(vault)
 
+    def test_build_network_accepts_non_ten_article_batches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            capture = root / "capture"
+            capture.mkdir()
+            (capture / "captured.json").write_text(
+                json.dumps({"items": self.sample_articles()}),
+                encoding="utf-8",
+            )
+
+            network = self.mod.build_network(capture, None, None)
+
+        self.assertEqual(2, network["article_count"])
+
 
 def _build_network_from_articles_for_test(module, articles, vault):
     note_map = module.find_literature_notes(vault, articles)

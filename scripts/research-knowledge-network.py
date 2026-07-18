@@ -956,8 +956,8 @@ def validate_test_vault(vault: Path) -> None:
 
 def build_network(capture_dir: Path, workflow_dir: Path | None, vault: Path | None = None) -> dict[str, Any]:
     articles = load_capture(capture_dir)
-    if len(articles) != 10:
-        raise NetworkError(f"Expected 10 capture records for this MVP; found {len(articles)}.")
+    if not articles:
+        raise NetworkError("No capture records found.")
     articles = merge_zotero_links(articles, load_link_map(workflow_dir, capture_dir))
     note_map = find_literature_notes(vault, articles) if vault else {}
     analyses = [analysis_for_article(article, note_map.get(normalize_doi(article.get("doi")))) for article in articles]

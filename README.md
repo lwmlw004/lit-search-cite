@@ -75,6 +75,7 @@ npx lit-search-cite@latest --target ~/my-skills      # 自定义路径
 | `multi-search.py` | 全平台 | 一键多源搜索（OpenAlex/CrossRef/PubMed/arXiv）+ DOI 去重 + 期刊等级 |
 | `multi-search.ps1` | Windows | 同上，PowerShell 版 |
 | `literature-workflow.py` | 全平台 | 关键词发现 → 标准 capture → Zotero 队列 → 可选 Obsidian 导入的 MVP 编排脚本 |
+| `research-network-incremental.py` | 全平台 | Research Knowledge Network 增量 inventory / prepare / preview / verify / guarded apply 工作流 |
 | `web-capture.py` | 全平台 | 从 URL/HTML/复制文本抓取网页文献，导出 BibTeX/RIS/CSV/Markdown/JSON |
 | `web-capture.ps1` | Windows | 同上，PowerShell 包装脚本 |
 | `test-web-capture.py` | 全平台 | `web-capture.py` 的无网络样例测试 |
@@ -172,6 +173,33 @@ python scripts\zotero-attachment-hub-adapter.py `
 ```
 
 默认只生成 staging queue 和 `zotero_link_map.json`。只有显式添加 `--apply-profile-queue` 时才会在备份后合并到当前 Zotero profile 的 `zotero-attachment-hub\queue.json`。本 workflow 和 adapter 都不写 `zotero.sqlite`，不读取浏览器 cookie，不保存账号/token，不绕过 403、429、验证码、登录或付费墙。
+
+## Research Knowledge Network 增量工作流
+
+`scripts/research-network-incremental.py` 用于把新的 capture 批次安全地接入已经存在的 Obsidian Research Knowledge Network。默认流程只读正式 vault：先盘点 capture 与当前正式 corpus，再生成分析任务包和隔离 preview vault，最后验证 DOI 唯一性、YAML、wikilinks、`.obsidian`、PDF 复制状态和结构幂等性。只有显式传入 `--stage apply --allow-apply` 时才会进入正式写入路径。
+
+典型 preview 命令：
+
+```powershell
+python scripts\research-network-incremental.py `
+  --capture-dir references\captured\YYYYMMDD_HHMMSS `
+  --workflow-dir references\workflows\YYYYMMDD_HHMMSS `
+  --current-runtime references\workflows\YYYYMMDD_HHMMSS\research_knowledge_network\CURRENT_RUN `
+  --vault "C:\Users\you\Documents\Obsidian Vault" `
+  --out references\workflows\YYYYMMDD_HHMMSS\research_knowledge_network\incremental_preview `
+  --stage preview
+```
+
+主要输出：
+
+- `inventory.json`：新 capture 与当前 vault DOI 盘点。
+- `prepare_plan.json`：新增、更新、no-op、重复、冲突和版本对判断。
+- `analysis_queue.json`：需要 Codex 分析或人工复核的文献队列。
+- `preview_diff.json`：隔离 preview vault 中的目标文件变化。
+- `verify_report.json`：DOI、YAML、wikilink 和安全边界验证。
+- `batch_report.md`：人工确认用的批次报告。
+
+完整五阶段契约见 `docs/research-network-incremental-workflow.md`。
 
 ## 受控 VPN / 校园网 Profile
 
