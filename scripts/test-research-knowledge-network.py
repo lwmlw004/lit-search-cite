@@ -80,6 +80,15 @@ class ResearchKnowledgeNetworkTests(unittest.TestCase):
         self.assertNotIn("stoichiometric intermediate", {m["name"] for m in self.mod.detect_evidence_methods(loose)})
         self.assertIn("stoichiometric intermediate", {m["name"] for m in self.mod.detect_evidence_methods(strict)})
 
+    def test_fallback_note_title_accepts_string_authors(self):
+        article = {
+            "title": "Fallback title from string authors",
+            "year": "2026",
+            "authors": ["Zhidao Huang", "Michelle E. Akana"],
+        }
+
+        self.assertTrue(self.mod.note_title_from_path(None, article).startswith("Huang 2026 - "))
+
     def test_builds_questions_and_experiments_with_guardrails(self):
         analyses = [self.mod.analysis_for_article(article, None) for article in self.sample_articles()]
         questions = self.mod.build_research_questions(analyses)

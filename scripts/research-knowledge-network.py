@@ -314,6 +314,15 @@ def article_key(article: dict[str, Any]) -> str:
     return doi or normalize_text(article.get("title")).lower()
 
 
+def first_author_last_name(author: Any) -> str:
+    if isinstance(author, dict):
+        value = author.get("lastName") or author.get("family") or author.get("name") or ""
+    else:
+        value = str(author or "")
+    parts = normalize_text(value).split()
+    return parts[-1] if parts else "Unknown"
+
+
 def note_title_from_path(path: Path | None, article: dict[str, Any]) -> str:
     if path:
         return path.stem
@@ -321,8 +330,7 @@ def note_title_from_path(path: Path | None, article: dict[str, Any]) -> str:
     first_author = "Unknown"
     authors = article.get("authors") or []
     if authors:
-        first = authors[0]
-        first_author = str(first.get("lastName") or first.get("family") or first.get("name") or first).split()[-1]
+        first_author = first_author_last_name(authors[0])
     return f"{first_author} {year} - {normalize_text(article.get('title'))[:60]}"
 
 

@@ -9,6 +9,7 @@ __pycache__/
 # Test/eval artifacts  
 evals/loop-results/
 evals/workspace/
+backups/obsidian-formal-research-network/
 
 # Downloaded PDFs
 downloads/
